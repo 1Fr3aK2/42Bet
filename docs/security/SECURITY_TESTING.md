@@ -182,19 +182,38 @@ curl -k "https://localhost/?cmd=;cat+/etc/passwd"
 
 **Attack vector**: Direct HTTP request to the Vault API without a token.
 
-**Command**:
+**Command (as originally run, against dev-mode Vault)**:
 ```bash
 curl http://localhost:8200/v1/secret/data/postgres
 ```
 
-**Result obtained**:
+**Result obtained (dev-mode Vault)**:
 ```json
 {"errors":["permission denied"]}
 ```
 
 **Expected result**: ✅ Permission denied
 
-**Conclusion**: Vault rejects any unauthenticated access to secrets. A valid token is required for any operation.
+**Conclusion (original, dev-mode Vault)**: Vault rejects any unauthenticated access to secrets. A valid token is required for any operation.
+
+> ⚠️ **Confirmed to need updating** — not just suspected. `VAULT_PRODUCTION.md`
+> (bug #7) documents that a plain `http://` request against port `8200`
+> against the current, hardened Vault produces
+> `TLS handshake error: client sent an HTTP request to an HTTPS server` — a
+> protocol-level rejection, not the `{"errors":["permission denied"]}` JSON
+> body this test originally documented. The command and result above are
+> **stale** and describe dev-mode Vault only.
+>
+> The corrected command, using the CA certificate Vault now requires:
+> ```bash
+> curl --cacert ./vault/certs/ca.pem https://localhost:8200/v1/secret/data/postgres
+> ```
+> This has not yet been run and its actual output recorded here — Vault's
+> authorization check happens independently of TLS, so `{"errors":["permission
+> denied"]}` is the expected outcome by the same logic as the original test,
+> but "expected by reasoning" isn't the same as "observed" for a security
+> test. **Run the corrected command and replace this note with the real
+> result** before treating Test 8 as passing again.
 
 ---
 
@@ -209,26 +228,38 @@ curl http://localhost:8200/v1/secret/data/postgres
 | 5 | WAF/nginx | XSS | 403 Forbidden | ✅ Blocked |
 | 6 | WAF/nginx | Path Traversal | 404 Not Found | ✅ Secure |
 | 7 | WAF/nginx | Command Injection | 403 Forbidden | ✅ Blocked |
-| 8 | Vault | Access without token | Permission denied | ✅ Secure |
+| 8 | Vault | Access without token | Permission denied (dev-mode result; now confirmed stale — HTTP against port 8200 fails at the TLS level, not with this JSON body) | ⚠️ Needs re-run with `--cacert` against HTTPS to get a current result |
 
 ---
 
 ## Known Limitations and Production Recommendations
 
-| Item | Current State (Dev) | Production Recommendation |
+| Item | Current State | Production Recommendation |
 |---|---|---|
 | Redis port exposed (`6379`) | Exposed on host | Remove `ports` from compose — accessible only on the Docker network |
 | Postgres port exposed (`5432`) | Exposed on host | Remove `ports` from compose |
-| Vault in dev mode | In-memory data, loses secrets on restart | Use persistent storage, remove `-dev` |
+| ~~Vault in dev mode~~ | **Resolved** — Vault now runs with a real `operator init -key-shares=5 -key-threshold=3`, persistent storage, and TLS; see `SECURITY_REPORT.md` §3 | — |
 | SSL certificates | `mkcert` (self-signed, local) | Use Let's Encrypt or a real certificate |
-| Vault root token | Used directly | Create tokens with limited, per-service permissions |
-| Secrets in vault_init logs | RoleID/SecretID visible in `docker logs` | Write to a file with `chmod 600` or use response wrapping |
+| ~~Vault root token~~ | **Resolved** — the root token is now used only for the initial bootstrap (secrets, policy, AppRole) and automatically revoked by `vault_init.sh` immediately afterward; every subsequent authentication uses a scoped AppRole token. See `VAULT_PRODUCTION.md`, "Idempotent bootstrap and root token revocation" | — |
+| AppRole credentials (RoleID/SecretID) | **Improved** — now persisted to files under the `vault-approle` volume and consumed directly by `backend`/`backend_seed`, rather than only printed to stdout and requiring manual capture; see `SECURITY_REPORT.md` §3 | Confirm these files are never included in any backup or export that leaves the host unencrypted |
 
 ---
 
-## Future Tests (once backend/frontend are integrated)
+## Future Tests
 
-- Rate limiting — verify that multiple fast requests are throttled
-- JWT authentication — verify that protected endpoints reject invalid tokens
-- CORS — verify that only allowed origins can access the API
-- Input validation — verify that the backend rejects malformed input the WAF didn't catch
+Status updated — several items below are no longer future work:
+
+- ~~Rate limiting — verify that multiple fast requests are throttled~~ — **done.**
+  See `RATE_LIMIT_TESTING.md` for the full test suite (IP-based and
+  per-account limiting on login, Redis counter/TTL verification, window
+  expiration) and `SECURITY_REPORT.md` §4 for the forum and Admin Public API
+  rate limiting added since.
+- ~~JWT authentication — verify that protected endpoints reject invalid
+  tokens~~ — **done**, as part of the hardening pass: a token forged with the
+  previously-hardcoded fallback secret (`'secret'`) was confirmed accepted
+  *before* the fix and rejected (`401`) *after* it, using `GET /auth/me`. See
+  `AUTH_HARDENING_REPORT.md` §2.
+- **CORS** — verify that only allowed origins can access the API. Not yet
+  tested; still open.
+- **Input validation** — verify that the backend rejects malformed input the
+  WAF didn't catch. Not yet tested as a dedicated pass; still open.

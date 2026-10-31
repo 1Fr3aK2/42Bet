@@ -9,6 +9,9 @@ import { MetricsModule } from './metrics/metrics.module';
 import { CryptoModule } from './crypto/crypto.module';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import { PublicApiModule } from './public-api/public-api.module';
+import { BetsModule } from './bets/bets.module';
+import { AnalyticsModule } from './analytics/analytics.module';
+import { CandlesModule } from './candles/candles.module';
 
 @Module({
   imports: [
@@ -22,6 +25,9 @@ import { PublicApiModule } from './public-api/public-api.module';
 	  CryptoModule,
 	  EventEmitterModule.forRoot(),
     PublicApiModule,
+    BetsModule,
+    AnalyticsModule,
+    CandlesModule,
   ],
   controllers: [],
   providers: [],

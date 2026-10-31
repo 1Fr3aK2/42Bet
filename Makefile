@@ -1,75 +1,95 @@
-NODE_BIN = ./backend/node_modules/.bin
+COMPOSE       = docker compose -f ./docker-compose.yml
+SCRIPT_CERTS  = ./scripts/setup-certs.sh
 
-NPM = npm --prefix backend
+# Alvo principal (por omissão)
+all: check-env certs build up
+	@echo "=========================================================="
+	@echo "  Transcendence is up and running!                        "
+	@echo "  URL: https://localhost                                  "
+	@echo "=========================================================="
 
-DOCKER_COMPOSE = docker compose
 
-SCRIPT_CERTS = ./scripts/setup-certs.sh
-COMPOSE = docker compose -f ./docker-compose.yml
+check-env:
+	@if [ ! -f .env ]; then \
+		echo "=========================================================="; \
+		echo "[!] ERROR: Configuration file .env not found!"; \
+		echo ""; \
+		echo "Please create your .env from the template before starting:"; \
+		echo "  cp .env.example .env"; \
+		echo "=========================================================="; \
+		exit 1; \
+	fi
 
-SERVICES = nginx nginx_exporter vault grafana prometheus redis redis_exporter postgres postgres_exporter
 
-all: deps build up
-	@echo "Transcendence started!"
+certs:
+	@chmod +x $(SCRIPT_CERTS)
+	@$(SCRIPT_CERTS)
 
-deps:
-	@echo "Installing backend dependencies..."
-	cd backend && npm install
-	cd backend && npx prisma generate
 
-build:
-	@echo "Building images..."
-	$(SCRIPT_CERTS)
-	$(COMPOSE) build
+build: check-env certs
+	@echo "Building Docker images..."
+	@$(COMPOSE) build
 
 up:
-	@echo "Upping all the containers..."
-	$(COMPOSE) up -d
+	@echo "Starting all containers in detached mode..."
+	@$(COMPOSE) up -d
 
 down:
-	@echo "Stopping and removing containers..."
-	$(COMPOSE) down
+	@echo "Stopping all containers..."
+	@$(COMPOSE) down
 
-dev:
-	@echo "Iniciando localmente em modo de desenvolvimento..."
-	$(NPM) run start:dev
 
-clean:
-	@echo "Cleaning Docker..."
-	@echo "Limpando a pasta dist..."
-	@if [ -d "backend/dist" ]; then \
-		rm -rf backend/dist 2>/dev/null || sudo rm -rf backend/dist; \
-	fi
-	$(COMPOSE) down
-	docker system prune -f
-
-fclean: clean
-	@echo "Full cleaning Docker..."
-	-docker stop $$(docker ps -qa)
-	-docker rm $$(docker ps -qa)
-	-docker rmi -f $$(docker images -qa)
-	-docker volume rm $$(docker volume ls -q)
-	-docker network rm $$(docker network ls -q) 2>/dev/null
-	sudo rm -rf nginx/certs/
-	sudo rm -rf vault/certs/
-	$(COMPOSE) down -v
+ps:
+	@$(COMPOSE) ps
 
 logs:
-	@echo "Check specific service logs (ex: make logs SERVICE=backend)"
-	$(COMPOSE) logs -f $(SERVICE)
+	@if [ -z "$(SERVICE)" ]; then \
+		$(COMPOSE) logs -f; \
+	else \
+		$(COMPOSE) logs -f $(SERVICE); \
+	fi
 
-update: deps
-	@echo "Updating everything and bringing all containers up to date..."
-	$(SCRIPT_CERTS)
-	$(COMPOSE) build
-	$(COMPOSE) up -d --remove-orphans
-	@echo "Transcendence updated and running!"
-
+# 5. Entrar num contentor interativamente
+# Exemplo: make exec SERVICE=backend
+#          make exec SERVICE=postgres
+#          make exec SERVICE=vault
 exec:
-	@echo "Entering on the container (ex: make exec SERVICE=backend)"
-	$(COMPOSE) exec $(SERVICE) sh
+	@if [ -z "$(SERVICE)" ]; then \
+		echo "Usage: make exec SERVICE=<service_name>"; \
+		echo "Example: make exec SERVICE=backend"; \
+		echo "         make exec SERVICE=postgres"; \
+		echo "         make exec SERVICE=vault"; \
+		exit 1; \
+	else \
+		$(COMPOSE) exec $(SERVICE) sh -c "bash || sh"; \
+	fi
 
-re: fclean deps build up
-	@echo "Restarting all the containers..."
+# 6. Atualizar código e reiniciar contentores sem perder dados da BD
+update: check-env certs
+	@echo "Rebuilding and updating containers..."
+	@$(COMPOSE) build
+	@$(COMPOSE) up -d --remove-orphans
+	@echo "Transcendence updated!"
 
-.PHONY: all build deps up down dev clean update fclean logs exec re
+# 7. Modo dev local opcional (fora do Docker, se necessário)
+dev:
+	@echo "Starting backend locally in dev mode..."
+	@npm --prefix backend run start:dev
+
+
+clean:
+	@echo "Stopping Transcendence containers..."
+	@$(COMPOSE) down
+
+
+fclean:
+	@echo "Full cleaning Transcendence (containers, volumes, images, certs, backups)..."
+	@$(COMPOSE) down -v --rmi all --remove-orphans
+	@docker run --rm -v "$(CURDIR)/backups:/backups" alpine sh -c "rm -rf /backups/* /backups/.[!.]* 2>/dev/null || true"
+	@rm -rf nginx/certs/ vault/certs/ backups/ backend/dist/
+	@rm -rf backend/node_modules/ frontend/node_modules/
+	@echo "Cleaned up all generated files, volumes, and images."
+
+re: fclean all
+
+.PHONY: all check-env certs build up down ps logs exec update dev clean fclean re

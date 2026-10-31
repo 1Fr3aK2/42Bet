@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 
-export default function ProfileDropdown({ user, onLogout, onSettingsClick }) {
+export default function ProfileDropdown({ user, onLogout, onSettingsClick, onModerationClick, onAdminClick }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
 
@@ -15,6 +15,8 @@ export default function ProfileDropdown({ user, onLogout, onSettingsClick }) {
   }, []);
 
   const initial = user.username.charAt(0).toUpperCase();
+  const isAdmin = user.role === 'ADMIN';
+  const isStaff = isAdmin || user.role === 'MODERATOR';
 
   return (
     <div className="profile-dropdown" ref={ref}>
@@ -24,7 +26,10 @@ export default function ProfileDropdown({ user, onLogout, onSettingsClick }) {
 
       {open && (
         <div className="profile-menu">
-          <div className="profile-menu-username">{user.username}</div>
+          <div className="profile-menu-username">
+            {user.username}
+            {isStaff && <span className="profile-menu-role">{user.role}</span>}
+          </div>
           <button
             className="profile-menu-item"
             onClick={() => {
@@ -34,6 +39,28 @@ export default function ProfileDropdown({ user, onLogout, onSettingsClick }) {
           >
             Settings
           </button>
+          {isStaff && (
+            <button
+              className="profile-menu-item"
+              onClick={() => {
+                setOpen(false);
+                onModerationClick();
+              }}
+            >
+              Moderation
+            </button>
+          )}
+          {isAdmin && (
+            <button
+              className="profile-menu-item"
+              onClick={() => {
+                setOpen(false);
+                onAdminClick();
+              }}
+            >
+              Manage users
+            </button>
+          )}
           <button
             className="profile-menu-item profile-menu-item--danger"
             onClick={() => {

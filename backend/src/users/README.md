@@ -1,316 +1,219 @@
-# Backend API - Transcendence
+# Users Module (`backend/src/users`)
 
-## Introdução
+## What it does
 
-Este documento explica como o frontend deve comunicar com o backend da aplicação Transcendence.
+Manages user accounts: creation, listing, profile updates, password changes,
+and role assignment. All write operations that affect other users are
+restricted to admins; users can only modify their own profile and password.
 
-O backend está desenvolvido em **NestJS** e expõe uma API REST.
+## Endpoints
 
-URL base em desenvolvimento:
+### `POST /users` — Create a user
 
-```
-http://localhost:8000
-```
+**Auth**: none (public — used during registration).
 
-Quando estiver através do Nginx:
-
-```
-https://localhost/api
-```
-
----
-
-# Users
-
-## Criar um novo utilizador
-
-### Endpoint
-
-```
-POST /users
-```
-
-### Headers
-
-```http
-Content-Type: application/json
-```
-
-### Body
-
-Enviar um objeto JSON com os dados do utilizador:
+#### Request body
 
 ```json
 {
   "username": "pedro",
   "email": "pedro@test.com",
-  "password": "12345678"
+  "password": "12345678",
+  "wallet": 0,
+  "avatar": "https://…"
 }
 ```
 
-### Exemplo usando JavaScript (fetch)
+`CreateUserDto` validation:
 
-```javascript
-fetch("http://localhost:8000/users", {
-  method: "POST",
-  headers: {
-    "Content-Type": "application/json"
-  },
-  body: JSON.stringify({
-    username: "pedro",
-    email: "pedro@test.com",
-    password: "12345678"
-  })
-})
-.then(response => response.json())
-.then(data => {
-  console.log(data);
-});
-```
+| Field      | Type   | Constraints                   |
+|------------|--------|-------------------------------|
+| `username` | string | required, 3 to 20 letters, digits, `_`, `.` or `-` (no `@`, see `user-rules.ts`) |
+| `email`    | string | required, valid email format  |
+| `password` | string | required, ≥ 8 characters      |
+| `wallet`   | number | optional, ignored: new accounts always start with 1000 (set by the server) |
+| `avatar`   | string | optional, PNG/JPEG/GIF/WebP image as a data URL, ≤ 100 000 characters |
 
-### Resposta esperada
+Password is hashed with **bcrypt** (10 rounds) before storage.
+
+#### Response `201`
 
 ```json
 {
   "id": 1,
   "username": "pedro",
-  "email": "pedro@test.com"
+  "email": "pedro@test.com",
+  "role": "USER",
+  "avatar": null,
+  "wallet": 1000,
+  "wins": 0,
+  "losses": 0,
+  "createdAt": "2026-01-01T00:00:00.000Z",
+  "updatedAt": "2026-01-01T00:00:00.000Z"
 }
+```
+
+#### Error `409 Conflict`
+
+Returned when `username` or `email` already exists.
+
+```json
+{ "message": "Username or email already exists", "statusCode": 409 }
 ```
 
 ---
 
-# Listar utilizadores
+### `GET /users` — List all users
 
-## Endpoint
+**Auth**: `JwtAuthGuard` + `RolesGuard` — requires role `ADMIN`.
 
-```
-GET /users
-```
-
-### Exemplo
-
-```javascript
-fetch("http://localhost:8000/users")
-.then(response => response.json())
-.then(users => {
-  console.log(users);
-});
-```
-
-### Resposta
+Returns all users with full public fields (no passwords).
 
 ```json
 [
   {
     "id": 1,
     "username": "pedro",
-    "email": "pedro@test.com"
+    "email": "pedro@test.com",
+    "role": "USER",
+    "avatar": null,
+    "wallet": 0,
+    "wins": 0,
+    "losses": 0,
+    "createdAt": "…",
+    "updatedAt": "…"
   }
 ]
 ```
 
 ---
 
-# Validação dos dados
+### `PATCH /users/:id/role` — Change a user's role
 
-O backend valida automaticamente os campos enviados.
+**Auth**: `JwtAuthGuard` + `RolesGuard` — requires role `ADMIN`.
 
-## Username
+#### Request body
 
-Obrigatório:
+```json
+{ "role": "MODERATOR" }
+```
+
+`UpdateUserRoleDto` validation:
+
+| Field  | Type   | Constraints                       |
+|--------|--------|-----------------------------------|
+| `role` | string | required, one of `USER`, `MODERATOR` |
+
+**Rules enforced by the service:**
+- Target user must exist — `404` otherwise.
+- An `ADMIN`'s role cannot be changed through this endpoint — `400` if
+  the target is already an admin.
+- `role` must be `USER` or `MODERATOR` (admins cannot be created this way).
+
+#### Response `200`
+
+```json
+{ "id": 2, "username": "joao", "email": "joao@test.com", "role": "MODERATOR" }
+```
+
+---
+
+### `PATCH /users/me` — Update own profile
+
+**Auth**: `JwtAuthGuard` — any authenticated user.
+
+Allows a user to change their own `username` and/or `avatar`.
+
+#### Request body
 
 ```json
 {
-  "username": "pedro"
+  "username": "new_name",
+  "avatar": "https://…"
 }
 ```
 
+`UpdateMeDto` validation:
+
+| Field      | Type   | Constraints                |
+|------------|--------|----------------------------|
+| `username` | string | optional, same rule as in `CreateUserDto` |
+| `avatar`   | string | optional, same rule as in `CreateUserDto` (the frontend resizes the picture to 256 x 256 first) |
+
+#### Response `200`
+
+Full user object (same shape as `POST /users` response).
+
+#### Error `409 Conflict`
+
+Returned when the new `username` is already taken.
+
 ---
 
-## Email
+### `PATCH /users/password` — Change own password
 
-Tem de ser um email válido:
+**Auth**: `JwtAuthGuard` — any authenticated user.
 
-Aceite:
+#### Request body
 
 ```json
 {
-  "email": "pedro@test.com"
+  "currentPassword": "oldpassword",
+  "newPassword": "newpassword123"
 }
 ```
 
-Rejeitado:
+`UpdatePasswordDto` validation:
+
+| Field             | Type   | Constraints          |
+|-------------------|--------|----------------------|
+| `currentPassword` | string | required             |
+| `newPassword`     | string | required, ≥ 8 chars  |
+
+**Rules enforced by the service:**
+- User must exist — `404` otherwise.
+- `currentPassword` must match the stored bcrypt hash — `400` if incorrect.
+- `newPassword` is hashed with bcrypt (10 rounds) before storage.
+
+#### Response `200`
 
 ```json
-{
-  "email": "pedro"
-}
+{ "message": "Password updated successfully" }
 ```
 
 ---
 
-## Password
+## Available roles
 
-Mínimo:
-
-```
-8 caracteres
-```
-
-Exemplo válido:
-
-```json
-{
-  "password": "12345678"
-}
-```
+| Role        | Description                                    |
+|-------------|------------------------------------------------|
+| `USER`      | Default role — regular player                  |
+| `MODERATOR` | Can access content moderation endpoints        |
+| `ADMIN`     | Full access, including user listing and role management |
 
 ---
 
-# Erros possíveis
+## Error reference
 
-## 400 Bad Request
-
-Dados inválidos.
-
-Exemplo:
-
-```json
-{
-  "message": [
-    "email must be an email",
-    "password must be longer than or equal to 8 characters"
-  ],
-  "error": "Bad Request",
-  "statusCode": 400
-}
-```
+| Status | Meaning                                              |
+|--------|------------------------------------------------------|
+| 400    | Validation error or business rule violation          |
+| 401    | Missing or invalid JWT                               |
+| 403    | Authenticated but insufficient role                  |
+| 404    | User not found                                       |
+| 409    | Username or email conflict                           |
 
 ---
 
-## 404 Not Found
-
-Endpoint inexistente.
-
-Exemplo:
-
-```json
-{
-  "message": "Cannot GET /teste",
-  "error": "Not Found",
-  "statusCode": 404
-}
-```
-
----
-
-# Estrutura de comunicação recomendada no frontend
-
-Criar um ficheiro para centralizar chamadas API:
-
-Exemplo:
+## Module structure
 
 ```
-src/
- └── api/
-     └── users.js
+users/
+├── users.module.ts           # NestJS module declaration
+├── users.controller.ts       # Route handlers
+├── users.service.ts          # Business logic + Prisma calls
+├── create-user.dto.ts        # DTO for POST /users
+├── update-me.dto.ts          # DTO for PATCH /users/me
+├── update-password.dto.ts    # DTO for PATCH /users/password
+└── update-user-role.dto.ts   # DTO for PATCH /users/:id/role
 ```
-
-Conteúdo:
-
-```javascript
-const API_URL = "http://localhost:8000";
-
-export async function createUser(user) {
-  const response = await fetch(`${API_URL}/users`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify(user)
-  });
-
-  return response.json();
-}
-
-
-export async function getUsers() {
-  const response = await fetch(`${API_URL}/users`);
-
-  return response.json();
-}
-```
-
-Depois no React:
-
-```javascript
-import { createUser } from "./api/users";
-
-async function register() {
-  const user = await createUser({
-    username: "pedro",
-    email: "pedro@test.com",
-    password: "12345678"
-  });
-
-  console.log(user);
-}
-```
-
----
-
-# Fluxo de Registo
-
-O frontend deve:
-
-1. Mostrar formulário:
-
-   * Username
-   * Email
-   * Password
-
-2. Validar campos no frontend.
-
-3. Fazer:
-
-```
-POST /users
-```
-
-4. Guardar a resposta.
-
-5. Redirecionar o utilizador para a página inicial/login.
-
----
-
-# Portas Docker
-
-| Serviço    | Porta |
-| ---------- | ----: |
-| Frontend   |  3000 |
-| Backend    |  8000 |
-| PostgreSQL |  5432 |
-| Redis      |  6379 |
-| Grafana    |  3001 |
-| Prometheus |  9090 |
-
----
-
-# Estado atual da API
-
-Disponível:
-
-✅ Criar utilizador
-✅ Listar utilizadores
-✅ Validação DTO
-
-A implementar:
-
-⬜ Login
-⬜ JWT Authentication
-⬜ Password hashing
-⬜ Base de dados PostgreSQL
-⬜ Perfil de utilizador
-⬜ Avatar
-⬜ Estatísticas de jogo

@@ -5,4 +5,4 @@ nginx/certs/
 vault/certs/
 node_modules/
 scripts/nginx/
-backups/postgres/
+backups/

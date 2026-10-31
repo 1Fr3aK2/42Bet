@@ -29,11 +29,18 @@ credentials required), login was locked out for the entire platform for
 
 **Fix:**
 ```ts
-const key = `login_attempts:${dto.username}`;
+const key = `login_attempts:${dto.email}`;
 ```
 The counter is now isolated per account. The existing `resetLimit(key)`
 call at the end of the method inherited the correct behaviour
 automatically, since it reuses the same variable.
+
+> **Correction to this revision:** this section previously referred to
+> `dto.username`. Confirmed against the actual login payload (`POST
+> /auth/login` takes `email`/`password`, per the team's Authentication
+> Module doc) that the field is `email`, matching what `RATE_LIMITING.md`
+> already showed. Updated here to match the real code rather than leaving
+> two documents disagreeing with each other.
 
 **Test:** confirmed that failed attempts against one account no longer
 affect login for other accounts.
@@ -89,6 +96,12 @@ Following the same pattern already used for `ADMIN_API_KEY`/
 returns empty (the secret never exists as a container environment
 variable, only in the Node process's memory after the AppRole login to
 Vault) — same behaviour already validated for `ADMIN_API_KEY`.
+
+> **Note:** the team's separate Authentication Module documentation still
+> shows `JWT_SECRET=secret123` living in `.env` as current config, and
+> lists "Move JWT secret to Hashicorp Vault" under its own "Future
+> Improvements" — that document has not been updated to reflect that this
+> migration is already done. Worth fixing there too, not just here.
 
 ---
 
@@ -183,7 +196,7 @@ populated by nginx, falling back to `request.ip`):
 const clientIp = (request.headers['x-real-ip'] as string) || request.ip;
 await this.rateLimiterService.checkLimit(`admin_api_requests:${clientIp}`, 100, 60);
 ```
-Known limitation: consumers behind the same IP/NAT still share a quota —
+Design note: consumers behind the same IP/NAT still share a quota —
 a future improvement would be per-client API keys.
 
 **Test:** tested directly against the backend (bypassing nginx's own rate

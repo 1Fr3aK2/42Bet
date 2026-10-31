@@ -2,6 +2,14 @@
 
 Documentation for the brute-force and DoS protection implemented on the login endpoint. Combines two complementary mechanisms: rate limiting by IP (nginx) and rate limiting by account (backend + Redis).
 
+> **Note on this revision:** the "Known simplifications / future work" section
+> has been updated — several items listed there have since been resolved. The
+> `dto.email` key shown below is confirmed correct (matches the team's
+> Authentication Module doc, which documents `POST /auth/login` taking
+> `email`/`password`) — `AUTH_HARDENING_REPORT.md` has been corrected to
+> match, resolving a discrepancy that existed in an earlier revision of this
+> document.
+
 ## Why two mechanisms
 
 A single mechanism doesn't cover every scenario:
@@ -19,10 +27,12 @@ Together, they cover each other's blind spots.
 limit_req_zone $binary_remote_addr zone=login:10m rate=10r/m;
 
 # inside the SSL server{} block:
-location /auth/login {
+location /auth/ {
     proxy_pass http://backend:8000;
     proxy_set_header Host $host;
     proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
     limit_req zone=login burst=5 nodelay;
 }
 ```
@@ -32,6 +42,7 @@ location /auth/login {
 - **Burst:** 5 extra requests in a burst, no delay (`nodelay`) — absorbs double-clicks/accidental refresh without penalizing the user
 - **Response when exceeded:** HTTP 503 (nginx's native behavior)
 - **`/api/` location removed:** it was misaligned with the backend (which doesn't use an `/api` prefix) and unused — cleaned up to avoid future confusion
+- **Location pattern updated:** now `/auth/` (trailing slash, matching the whole auth module) rather than `/auth/login` specifically — see `NGINX_CONFIG.md` for the current full location list
 
 **Tested with:**
 ```bash
@@ -50,7 +61,7 @@ Result: the first ~6 requests go through, the rest are rejected with 503 — con
 
 **Why Redis, not local memory:** an in-memory variable in the Node process is lost on container restart, and isn't shared across multiple backend instances (if scaled horizontally) — each instance would only see its own attempts, allowing the limit to be bypassed.
 
-**New file:** `backend/src/rate-limiter/rate-limiter.service.ts`
+**File:** `backend/src/rate-limiter/rate-limiter.service.ts`
 
 ```typescript
 import { Injectable, OnModuleInit } from '@nestjs/common';
@@ -82,7 +93,7 @@ export class RateLimiterService implements OnModuleInit {
 
 - **`INCR`** is atomic — avoids a race condition on simultaneous requests (reading, incrementing, and writing separately would let two parallel attempts collapse into a single count)
 - **`EXPIRE`** is only set on the 1st attempt (`attempts === 1`) — if it were reset on every attempt, the lockout would never actually expire
-- **Generic and reusable** — the service knows nothing about "login"; it can be used to limit other actions (creating posts, trades, etc.) just by calling `checkLimit` with a different `key`/limits
+- **Generic and reusable** — the service knows nothing about "login"; it is now also used to limit forum writes (posts, comments, reports) and the Admin Public API, just by calling `checkLimit` with a different `key`/limits — see `SECURITY_REPORT.md` §4
 
 **Integration in `backend/src/auth/auth.service.ts`:**
 
@@ -127,8 +138,28 @@ Both mechanisms are confirmed working correctly end-to-end.
 2. **By account:** 6 consecutive failed attempts for the same email (from different origins/IPs, or with the IP limit temporarily disabled) — confirm 401 with the generic message on the 6th.
 3. **Reset:** 2-3 consecutive failures, then a successful login — confirm you get the full 5 attempts back (no "inherited" history).
 
+A separate, real bug was later found in this exact mechanism: the Redis key
+used in the shipped code did not actually include the per-account variable
+shown above, meaning every account shared a single global counter — five
+failed logins from anyone locked out login for everyone. Fixed by confirming
+the key includes the submitted identifier (as the snippet above shows); see
+`AUTH_HARDENING_REPORT.md` §1 for the full incident writeup. This is also the
+source of the `email`/`username` naming discrepancy flagged at the top of
+this document — worth resolving in the code itself, not just the docs.
+
 ## Known simplifications / future work
 
-- Vault runs in `-dev` mode (no persistence, no real seal/unseal) — acceptable for the scope of the project, but documented as a known simplification.
-- Current monitoring is metrics-only (Prometheus/Grafana); there's no centralized log aggregation (e.g. Loki) — a gap to cover if time allows.
-- Rate limiting is not yet applied to all remaining endpoints (for example, forum and trades). The shared RateLimiterService is currently reused by both the login endpoint and the Public Admin API.
+Updated from the original version — several items here are now resolved:
+
+- ~~Vault runs in `-dev` mode~~ — **resolved.** Vault now runs with a real
+  `operator init`/unseal and TLS; see `SECURITY_REPORT.md` §3.
+- ~~No centralized log aggregation~~ — **resolved.** An ELK stack
+  (Elasticsearch, Logstash, Kibana, Filebeat) now covers this, including
+  structured parsing of the WAF audit log and index lifecycle management; see
+  `SECURITY_REPORT.md` §6 and `docs/logging/ILM.md`.
+- ~~Rate limiting not yet applied to forum~~ — **resolved.** Per-user limits
+  now cover `createPost`/`createComment`/`createReport`, reusing this same
+  `RateLimiterService`; see `SECURITY_REPORT.md` §4.
+- **Trades** (or any other write-heavy endpoint outside auth/forum/admin)
+  — not yet confirmed to have rate limiting; status unknown, flagged here
+  rather than assumed either way.

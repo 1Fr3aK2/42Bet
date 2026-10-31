@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import Navbar from './components/Navbar';
 import CoinSelector from './components/CoinSelector';
 import PriceDisplay from './components/PriceDisplay';
@@ -12,57 +12,50 @@ import RegisterModal from './components/RegisterModal';
 import LoginModal from './components/LoginModal';
 import SettingsPage from './components/SettingsPage';
 import ForumPage from './components/Forum/ForumPage';
-import { fakePrices, PAYOUT, MINUTE, WINDOW } from './data/constants';
+import ModerationPage from './components/Forum/ModerationPage';
+import AdminUsersPage from './components/AdminUsersPage';
+import { COINS } from './data/constants';
 import { socket } from './api/socket';
-
-const HISTORY_WINDOW_MS = 10 * 60 * 1000; // 10 minutes
+import { getMe } from './api/users';
+import { getTicker } from './api/crypto';
+import { BET_SECONDS, betAmountError } from './api/bets';
+import useBets, { secondsLeft } from './hooks/useBets';
+import { fmt } from './utils/format';
 
 export default function App() {
   // ── State (this replaces every loose "let" at the top of script.js) ──
-  const [balance, setBalance] = useState(1000);
   const [selectedCoin, setSelectedCoin] = useState('BTC');
-  const [currentPrices, setCurrentPrices] = useState(() => {
-    const obj = {};
-    for (const coin in fakePrices) obj[coin] = fakePrices[coin].price;
-    return obj;
-  });
-  // Snapshot of each coin's price at the start of the current round —
-  // used as the reference point for the % change shown in PriceDisplay.
-  const [roundStartPrices, setRoundStartPrices] = useState(() => {
-    const obj = {};
-    for (const coin in fakePrices) obj[coin] = fakePrices[coin].price;
-    return obj;
-  });
-  // Rolling price history per coin, used by the chart (last 10 minutes).
-  const [priceHistory, setPriceHistory] = useState(() => {
-    const obj = {};
-    for (const coin in fakePrices) obj[coin] = [];
-    return obj;
-  });
+  // Latest ticker of each coin from the server's Kraken feed: price and the
+  // 24 h high, low, volume and change. Empty until the first one arrives.
+  const [tickers, setTickers] = useState({});
   const [sidePanelView, setSidePanelView] = useState('chart'); // 'chart' | 'activity'
-  const [cycleSecond, setCycleSecond] = useState(0);
-  const [bets, setBets] = useState([]);
-  const [history, setHistory] = useState([]);
-  const [betAmount, setBetAmount] = useState(100);
+  const [betAmount, setBetAmount] = useState('100');
   const [betStatus, setBetStatus] = useState({ text: '', type: '' });
+  const [placing, setPlacing] = useState(false);
   const [toast, setToast] = useState({ msg: '', type: '', show: false });
   const [showRegister, setShowRegister] = useState(false);
   const [showLogin, setShowLogin] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showForum, setShowForum] = useState(false);
+  const [showModeration, setShowModeration] = useState(false);
+  const [showAdminUsers, setShowAdminUsers] = useState(false);
   const [currentUser, setCurrentUser] = useState(() => {
     const saved = localStorage.getItem('currentUser');
     return saved ? JSON.parse(saved) : null;
   });
   const [token, setToken] = useState(() => localStorage.getItem('token'));
 
-  // The game loop runs on a 1s interval that's only created once (empty deps
-  // below). To read the LATEST bets/prices/coin from inside it without
-  // stale closures, we mirror them into refs every render.
-  const betsRef = useRef(bets);
-  betsRef.current = bets;
-  const pricesRef = useRef(currentPrices);
-  pricesRef.current = currentPrices;
+  // ── Balance and bets come from the server ──
+  // The server checks, places, settles and pays every bet (hooks/useBets.js);
+  // the page only shows the result. Guests have no balance and cannot bet.
+  const { balance, activeBets, settledBets, now, place } = useBets(token, {
+    onSettled: showResults,
+    onExpired: () => {
+      setToken(null);
+      setCurrentUser(null);
+      showToast('Session expired, please log in again', 'loss');
+    },
+  });
 
   // ── Persist auth state to localStorage so a page refresh doesn't log out ──
   useEffect(() => {
@@ -75,20 +68,34 @@ export default function App() {
     else localStorage.removeItem('currentUser');
   }, [currentUser]);
 
+  // ── On app load, refresh the logged-in user from the backend ──
+  // localStorage may hold an outdated copy; the database is the source of truth.
+  useEffect(() => {
+    if (!token) return;
+    getMe(token)
+      .then(setCurrentUser)
+      .catch(() => {
+        // token expired or invalid -> log out
+        setToken(null);
+        setCurrentUser(null);
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // ── Listen for real-time crypto prices from the backend's Socket.io gateway ──
   useEffect(() => {
     function handleTicker(ticker) {
       const coin = ticker.symbol.split('/')[0]; // "BTC/EUR" -> "BTC"
-      const now = Date.now();
-
-      setCurrentPrices((prev) => ({ ...prev, [coin]: ticker.last }));
-
-      setPriceHistory((prev) => {
-        const points = [...(prev[coin] || []), { time: now, price: ticker.last }];
-        const cutoff = now - HISTORY_WINDOW_MS;
-        return { ...prev, [coin]: points.filter((p) => p.time >= cutoff) };
-      });
+      setTickers((prev) => ({ ...prev, [coin]: ticker }));
     }
+
+    // The gateway only sends a ticker when the price changes: ask the server
+    // for the current one now instead of waiting for the next change.
+    COINS.forEach((coin) => {
+      getTicker(coin)
+        .then((ticker) => ticker && handleTicker(ticker))
+        .catch(() => {});
+    });
 
     socket.on('crypto:ticker', handleTicker);
     return () => socket.off('crypto:ticker', handleTicker);
@@ -101,103 +108,73 @@ export default function App() {
     setTimeout(() => setToast((t) => ({ ...t, show: false })), 3500);
   }
 
-  function updateBalance(amount) {
-    setBalance((b) => Math.max(0, b + amount));
+  // Guests can look at the prices, but betting, the forum and the settings
+  // need an account: show why and open the login.
+  function askToLogin(message) {
+    showToast(message, 'loss');
+    setShowLogin(true);
   }
 
-  function resolveBet(bet, exitPrice) {
-    const wentUp = exitPrice > bet.entry;
-    const won = (bet.direction === 'up' && wentUp) || (bet.direction === 'down' && !wentUp);
-    const diff = ((exitPrice - bet.entry) / bet.entry) * 100;
-
-    if (won) {
-      const payout = Math.floor(bet.amount * PAYOUT);
-      updateBalance(payout);
-      showToast(`✓ WIN ${bet.coin} +T$ ${payout}`, 'win');
+  // Called by useBets when the server has settled one or more of the user's bets.
+  function showResults(bets) {
+    if (bets.length === 1) {
+      const [bet] = bets;
+      if (bet.status === 'won') showToast(`✓ WIN ${bet.coin} +T$ ${bet.payout}`, 'win');
+      else if (bet.status === 'lost') showToast(`✗ LOSS ${bet.coin} -T$ ${bet.amount}`, 'loss');
+      else showToast(`↺ REFUND ${bet.coin} T$ ${bet.amount}`, 'info');
     } else {
-      showToast(`✗ LOSS ${bet.coin} -T$ ${bet.amount}`, 'loss');
+      const count = (status) => bets.filter((bet) => bet.status === status).length;
+      showToast(`${bets.length} bets settled: ${count('won')} won, ${count('lost')} lost`, count('won') ? 'win' : 'loss');
     }
 
-    setHistory((h) =>
-      [{ id: Date.now() + Math.random(), coin: bet.coin, direction: bet.direction, amount: bet.amount, won, diff }, ...h].slice(0, 8)
-    );
-
+    const [last] = bets; // newest first
+    const diff = last.exitPrice ? ((last.exitPrice - last.entryPrice) / last.entryPrice) * 100 : 0;
     setBetStatus({
-      text: `${bet.coin} ${won ? 'WIN' : 'LOSS'} (${wentUp ? '+' : ''}${diff.toFixed(3)}%)`,
-      type: won ? 'up' : 'down',
+      text: `${last.coin} ${last.status.toUpperCase()} (${diff >= 0 ? '+' : ''}${diff.toFixed(3)}%)`,
+      type: last.status === 'won' ? 'up' : last.status === 'lost' ? 'down' : '',
     });
   }
 
-  function placeBet(direction) {
-    const amount = parseInt(betAmount, 10) || 100;
-
-    if (amount > balance) {
-      setBetStatus({ text: 'Insufficient balance', type: 'down' });
+  // The server checks the login, the amount and the balance, takes the entry
+  // price from its own feed and settles the bet BET_SECONDS later. The checks
+  // here only show the problem before anything is sent.
+  async function placeBet(direction) {
+    if (!currentUser) {
+      askToLogin('Log in to place bets');
+      return;
+    }
+    const error = betAmountError(betAmount, balance);
+    if (error) {
+      setBetStatus({ text: error, type: 'down' });
       return;
     }
 
-    updateBalance(-amount);
-    const isQueued = cycleSecond >= WINDOW;
-    const bet = {
-      id: Date.now() + Math.random(),
-      coin: selectedCoin,
-      direction,
-      amount,
-      entry: isQueued ? null : currentPrices[selectedCoin],
-      status: isQueued ? 'queued' : 'active',
-    };
-    setBets((prev) => [...prev, bet]);
-    setBetStatus({
-      text: isQueued
-        ? `Queued: ${direction.toUpperCase()} on ${selectedCoin} (next round)`
-        : `Active: ${direction.toUpperCase()} on ${selectedCoin}`,
-      type: '',
-    });
+    setPlacing(true);
+    try {
+      const bet = await place({ coin: selectedCoin, direction, amount: Number(betAmount) });
+      setBetStatus({ text: `Active: ${direction.toUpperCase()} on ${bet.coin} at ${fmt(bet.entryPrice)}`, type: '' });
+    } catch (err) {
+      setBetStatus({ text: err.message, type: 'down' });
+    } finally {
+      setPlacing(false);
+    }
   }
 
   async function handleLoginSuccess(accessToken) {
     setToken(accessToken);
-    // decode just enough to greet them — or fetch /users with the token later
-    showToast('Logged in!', 'win');
-    setCurrentUser({ username: 'placeholder' }); // see note below
+    try {
+      // Load the real profile (username, avatar, ...) from the backend
+      const user = await getMe(accessToken);
+      setCurrentUser(user);
+      showToast(`Welcome back, ${user.username}!`, 'win');
+    } catch {
+      showToast('Logged in, but could not load your profile', 'loss');
+    }
   }
 
-  // ── Round timer: advances the clock and resolves bets every minute ──
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setCycleSecond((prevSecond) => {
-        const next = (prevSecond + 1) % MINUTE;
-
-        if (next === 0) {
-          const latestPrices = pricesRef.current;
-          const currentBets = betsRef.current;
-
-          currentBets.forEach((bet) => {
-            if (bet.status === 'active' && bet.entry !== null) {
-              resolveBet(bet, latestPrices[bet.coin]);
-            }
-          });
-
-          setBets((prev) =>
-            prev
-              .filter((b) => !(b.status === 'active' && b.entry !== null)) // drop resolved
-              .map((b) => (b.status === 'queued' ? { ...b, status: 'active', entry: latestPrices[b.coin] } : b))
-          );
-          setBetStatus({ text: '', type: '' });
-
-          // New round starting — snapshot current prices as the new reference point
-          setRoundStartPrices({ ...latestPrices });
-        }
-
-        return next;
-      });
-    }, 1000);
-
-    return () => clearInterval(interval);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // empty deps: set up once, reads latest state via refs
-
-  const hasQueuedBet = bets.some((b) => b.status === 'queued');
+  const ticker = tickers[selectedCoin];
+  // The running bet that ends first, for the countdown under the price.
+  const nextBet = activeBets.reduce((first, bet) => (!first || bet.expiresAt < first.expiresAt ? bet : first), null);
 
   return (
     <>
@@ -205,8 +182,10 @@ export default function App() {
         balance={balance}
         onRegisterClick={() => setShowRegister(true)}
         onLoginClick={() => setShowLogin(true)}
-        onSettingsClick={() => setShowSettings(true)}
-        onForumClick={() => setShowForum(true)}
+        onSettingsClick={() => (currentUser ? setShowSettings(true) : askToLogin('Log in to change your settings'))}
+        onForumClick={() => (currentUser ? setShowForum(true) : askToLogin('Log in to use the forum'))}
+        onModerationClick={() => setShowModeration(true)}
+        onAdminClick={() => setShowAdminUsers(true)}
         currentUser={currentUser}
         onLogout={() => { setCurrentUser(null); setToken(null); }}
       />
@@ -215,19 +194,33 @@ export default function App() {
         <div className="trading-layout">
           <div className="trading-panel">
             <CoinSelector selectedCoin={selectedCoin} onSelect={setSelectedCoin} />
-            <PriceDisplay
-              coin={selectedCoin}
-              price={currentPrices[selectedCoin]}
-              basePrice={roundStartPrices[selectedCoin]}
-              stats={fakePrices[selectedCoin]}
-            />
-            <Timer cycleSecond={cycleSecond} hasQueuedBet={hasQueuedBet} />
+            {ticker ? (
+              <PriceDisplay
+                coin={selectedCoin}
+                price={ticker.last}
+                basePrice={ticker.last - ticker.change}
+                stats={{
+                  high: ticker.high,
+                  low: ticker.low,
+                  volume: `${Math.round(ticker.volume).toLocaleString('en-US')} ${selectedCoin}`,
+                }}
+              />
+            ) : (
+              <div className="price-display">
+                <span className="price-coin">{selectedCoin}</span>
+                <span className="price-change">Waiting for the live price…</span>
+              </div>
+            )}
+            <Timer secondsLeft={nextBet ? secondsLeft(nextBet, now) : null} duration={BET_SECONDS} />
             <BetSection
               betAmount={betAmount}
-              onAmountChange={setBetAmount}
+              onAmountChange={(value) => setBetAmount(String(value))}
               balance={balance}
               onBet={placeBet}
               betStatus={betStatus}
+              loggedIn={Boolean(currentUser)}
+              placing={placing}
+              amountError={currentUser ? betAmountError(betAmount, balance) : ''}
             />
           </div>
 
@@ -248,11 +241,11 @@ export default function App() {
             </div>
 
             {sidePanelView === 'chart' ? (
-              <PriceChart coin={selectedCoin} data={priceHistory[selectedCoin] || []} />
+              <PriceChart coin={selectedCoin} ticker={ticker} bets={activeBets} />
             ) : (
               <>
-                <ActiveBets bets={bets} />
-                <HistoryList history={history} />
+                <ActiveBets bets={activeBets} now={now} />
+                <HistoryList history={settledBets} />
               </>
             )}
           </div>
@@ -295,6 +288,21 @@ export default function App() {
           token={token}
           currentUser={currentUser}
           onClose={() => setShowForum(false)}
+        />
+      )}
+
+      {showModeration && (
+        <ModerationPage
+          token={token}
+          onClose={() => setShowModeration(false)}
+        />
+      )}
+
+      {showAdminUsers && (
+        <AdminUsersPage
+          token={token}
+          currentUser={currentUser}
+          onClose={() => setShowAdminUsers(false)}
         />
       )}
     </>

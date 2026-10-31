@@ -1,0 +1,88 @@
+/* ════════════════════════════════════════════
+   PHONES AND TABLETS
+   Loaded after style.css (see main.jsx): the
+   rules that adapt every page to small screens.
+   style.css says how things look; this file
+   only changes the layout under 900, 700 and
+   600 px wide.
+   ════════════════════════════════════════════ */
+
+/* ── Tablets and small laptops: one column, the chart under the bet panel ── */
+@media (max-width: 900px) {
+  .trading-layout { grid-template-columns: minmax(0, 1fr); }
+}
+
+
+/* ── Analytics dashboard ── */
+@media (max-width: 700px) {
+  .analytics-container {
+    padding: 56px 16px 32px;
+  }
+
+  .analytics-charts {
+    grid-template-columns: 1fr;
+  }
+
+  .analytics-exports {
+    margin-left: 0;
+  }
+
+  .analytics-donut {
+    flex-direction: column;
+  }
+}
+
+
+/* ── Phones ── */
+@media (max-width: 600px) {
+  /* Navbar on two rows: logo, then icons, balance and account */
+  .navbar { flex-wrap: wrap; height: auto; padding: 10px 16px; gap: 8px; }
+  .logo-text { font-size: 17px; }
+  .nav-actions { width: 100%; justify-content: space-between; gap: 6px; }
+  .nav-divider { display: none; }
+  .nav-btn { padding: 8px 12px; }
+
+  /* Betting panel */
+  .page-content { padding: 16px; min-height: 0; }
+  .trading-panel { padding: 18px; gap: 18px; }
+  .price-display { flex-wrap: wrap; row-gap: 4px; }
+  .price-value { font-size: 26px; }
+  .stat { padding: 8px 10px; min-width: 0; }
+  .stat-value { font-size: 12px; overflow-wrap: anywhere; }
+
+  .toast { left: 16px; right: 16px; bottom: 16px; text-align: center; }
+  .modal { width: calc(100vw - 32px); max-width: 320px; }
+
+  /* Settings: the tabs go above the form */
+  .settings-page { flex-direction: column; }
+  .settings-sidebar {
+    width: auto;
+    flex-direction: row;
+    padding: 12px 56px 0 8px;
+    border-right: none;
+    border-bottom: 1px solid #1c2330;
+  }
+  .settings-sidebar-header { display: none; }
+  .settings-tab { border-left: none; border-bottom: 3px solid transparent; padding: 10px 14px; }
+  .settings-tab.active { border-bottom-color: #f7a825; }
+  .settings-content { padding: 24px 16px; }
+  .settings-close { top: 12px; right: 16px; }
+
+  /* Forum, moderation, users and legal pages (they share .forum-container) */
+  .forum-page .forum-container { padding: 56px 16px 24px; }
+  .forum-header h1 { font-size: 22px; }
+  .user-row { flex-wrap: wrap; }
+  .report-card { padding: 14px; }
+
+  /* Candlestick chart */
+  .chart-canvas { height: 300px; }
+
+  /* Legal footer and pages */
+  .legal-footer {
+    padding: 16px;
+  }
+
+  .settings-page.forum-page .legal-content {
+    padding: 56px 20px 32px;
+  }
+}

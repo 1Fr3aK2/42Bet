@@ -21,11 +21,22 @@ export class AuthService {
       throw new UnauthorizedException('Too many login attempts. Please try again later.');
     }
 
-    const user = await this.prisma.user.findUnique({
+    let user = await this.prisma.user.findUnique({
       where: {
         username: dto.username,
       },
     });
+
+    // The login field also takes the email (the subject asks for email and
+    // password authentication). Usernames cannot contain "@" (users/user-rules.ts),
+    // so only an email reaches this second lookup.
+    if (!user && dto.username.includes('@')) {
+      user = await this.prisma.user.findUnique({
+        where: {
+          email: dto.username,
+        },
+      });
+    }
 
     if (!user) {
       throw new UnauthorizedException('Invalid username or password');

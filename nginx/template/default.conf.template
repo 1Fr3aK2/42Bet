@@ -1,8 +1,12 @@
+    map $http_upgrade $connection_upgrade {
+        default upgrade;
+        ''      close;
+    }
 
     limit_req_zone $binary_remote_addr zone=admin_api:10m rate=30r/s;
     limit_req_zone $binary_remote_addr zone=login:10m rate=10r/m;
     limit_req_zone $binary_remote_addr zone=forum:10m rate=30r/s;
-
+    limit_req_zone $binary_remote_addr zone=health:10m rate=10r/s;
     
     server {
         listen ${PORT};
@@ -21,7 +25,6 @@
             allow ::1;
             deny all;
         }
-
     }
 
     server {
@@ -40,8 +43,18 @@
         add_header X-Frame-Options "DENY" always;
         add_header Referrer-Policy "strict-origin-when-cross-origin" always;
 
+        resolver 127.0.0.11 valid=10s;
+        set $upstream_frontend http://frontend:5173;
+        set $upstream_backend http://backend:8000;
+        set $upstream_grafana http://grafana:3000;
+        set $upstream_prometheus http://prometheus:9090;
+        set $upstream_kibana http://kibana:5601;
+
         location / {
-            proxy_pass http://frontend:5173;
+            proxy_pass $upstream_frontend;
+            proxy_http_version 1.1;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection $connection_upgrade;
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -49,7 +62,7 @@
         }
 
         location /api/admin {
-            proxy_pass http://backend:8000;
+            proxy_pass $upstream_backend;
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -60,43 +73,50 @@
         }
 
         location /users {
-            proxy_pass http://backend:8000;
+            proxy_pass $upstream_backend;
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
             proxy_set_header X-Forwarded-Proto $scheme;
         }
 
-        location /auth/ {
-            proxy_pass http://backend:8000;
+        location /auth {
+            proxy_pass $upstream_backend;
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
             proxy_set_header X-Forwarded-Proto $scheme;
             limit_req zone=login burst=5 nodelay;
+            limit_req_status 429;
         }
 
-		location /crypto {
-    		proxy_pass http://backend:8000;
-    		proxy_set_header Host $host;
-    		proxy_set_header X-Real-IP $remote_addr;
-    		proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    		proxy_set_header X-Forwarded-Proto $scheme;
-		}
-
-        location /forum {
-            proxy_pass http://backend:8000;
+        location /crypto {
+            proxy_pass $upstream_backend;
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+        }
+
+        location /forum {
+            proxy_pass $upstream_backend;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
             limit_req zone=forum burst=5 nodelay;
+            limit_req_status 429;
         }
 
         location /ws {
-            proxy_pass http://backend:8000;
+            proxy_pass $upstream_backend;
+            proxy_http_version 1.1;
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header Upgrade $http_upgrade;
-            proxy_set_header Connection "upgrade";
+            proxy_set_header Connection $connection_upgrade;
+            proxy_read_timeout 3600s;
+            proxy_send_timeout 3600s;
         }
 
         location /socket.io/ {
@@ -104,21 +124,24 @@
             modsecurity_rules '
                 SecRuleRemoveById 920420
             ';
-            proxy_pass http://backend:8000;
+            proxy_pass $upstream_backend;
+            proxy_http_version 1.1;
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header Upgrade $http_upgrade;
-            proxy_set_header Connection "upgrade";
+            proxy_set_header Connection $connection_upgrade;
+            proxy_read_timeout 3600s;
+            proxy_send_timeout 3600s;
         }
 
         location /grafana/ {
-            proxy_pass http://grafana:3000;
+            proxy_pass $upstream_grafana;
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
         }
 
         location /prometheus/ {
-            proxy_pass http://prometheus:9090;
+            proxy_pass $upstream_prometheus;
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
         }
@@ -130,8 +153,23 @@
                 SecRuleRemoveById 932240
                 SecRuleRemoveById 942220
                 SecRuleRemoveById 942340
+                SecRuleRemoveById 934190
             ';
-            proxy_pass http://kibana:5601;
+            proxy_pass $upstream_kibana;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+        }
+
+        location /status {
+            alias /usr/share/nginx/status/;
+            index index.html;
+            try_files $uri $uri/ /status/index.html;
+        }
+        
+        location /health {
+            limit_req zone=health burst=20 nodelay;
+            rewrite ^ /health/status break;
+            proxy_pass $upstream_backend;
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
         }

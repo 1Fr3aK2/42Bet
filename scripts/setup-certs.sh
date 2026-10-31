@@ -1,39 +1,64 @@
 #!/bin/bash
 set -e
 
-# Instalar mkcert se não existir
-if ! command -v mkcert &>/dev/null; then
-    echo "[*] Installing mkcert..."
-    sudo apt install -y libnss3-tools
-    curl -Lo /tmp/mkcert https://github.com/FiloSottile/mkcert/releases/latest/download/mkcert-v1.4.4-linux-amd64
-    chmod +x /tmp/mkcert
-    sudo mv /tmp/mkcert /usr/local/bin/mkcert
+if [ -f "nginx/certs/nginx.cert" ] && [ -f "vault/certs/vault.cert" ] && [ -f "vault/certs/ca.pem" ]; then
+    echo "[+] Certificates already exist in nginx/certs/ and vault/certs/ — skipping."
+    exit 0
 fi
 
-# Instalar CA local
-mkcert -install
+mkdir -p nginx/certs vault/certs
 
-# Gerar certs do nginx
-mkdir -p nginx/certs
-cd nginx/certs
-mkcert localhost 127.0.0.1 ::1
-mv localhost+2.pem nginx.cert
-mv localhost+2-key.pem nginx.key
-chmod 644 nginx.key
-cd ../..
+if command -v mkcert &>/dev/null; then
+    echo "[*] Using mkcert to generate certificates..."
+    mkcert -install >/dev/null 2>&1 || true
 
-echo "[+] Certs generated at nginx/certs/"
+    cd nginx/certs
+    mkcert localhost 127.0.0.1 ::1
+    mv localhost+2.pem nginx.cert
+    mv localhost+2-key.pem nginx.key
+    chmod 644 nginx.key
+    cd ../..
 
-# Gerar cert do Vault, para TLS interno (mesma CA local do mkcert)
-mkdir -p vault/certs
-cd vault/certs
-mkcert vault localhost 127.0.0.1 ::1
-mv vault+3.pem vault.cert
-mv vault+3-key.pem vault.key
-chmod 644 vault.key
-cd ../..
+    cd vault/certs
+    mkcert vault localhost 127.0.0.1 ::1
+    mv vault+3.pem vault.cert
+    mv vault+3-key.pem vault.key
+    chmod 644 vault.key
+    cd ../..
 
-# Copiar a CA root do mkcert, para o backend/vault_init confiarem nela
-cp "$(mkcert -CAROOT)/rootCA.pem" vault/certs/ca.pem
+    cp "$(mkcert -CAROOT)/rootCA.pem" vault/certs/ca.pem
+else
+    echo "[*] mkcert not found. Generating local self-signed SAN certificates using OpenSSL..."
 
-echo "[+] Certs generated at vault/certs/"
+    # 1. Gerar CA interna
+    openssl req -x509 -nodes -new -sha256 -days 365 -newkey rsa:2048 \
+        -keyout vault/certs/ca.key -out vault/certs/ca.pem \
+        -subj "/CN=TranscendenceCA"
+
+    # 2. Gerar Certificado do Nginx com SAN
+    openssl req -new -nodes -newkey rsa:2048 \
+        -keyout nginx/certs/nginx.key -out nginx/certs/nginx.csr \
+        -subj "/CN=localhost" \
+        -addext "subjectAltName=DNS:localhost,IP:127.0.0.1,IP:::1"
+
+    openssl x509 -req -sha256 -days 365 -in nginx/certs/nginx.csr \
+        -CA vault/certs/ca.pem -CAkey vault/certs/ca.key -CAcreateserial \
+        -out nginx/certs/nginx.cert \
+        -copy_extensions copy
+
+    # 3. Gerar Certificado do Vault com SAN
+    openssl req -new -nodes -newkey rsa:2048 \
+        -keyout vault/certs/vault.key -out vault/certs/vault.csr \
+        -subj "/CN=vault" \
+        -addext "subjectAltName=DNS:vault,DNS:localhost,IP:127.0.0.1,IP:::1"
+
+    openssl x509 -req -sha256 -days 365 -in vault/certs/vault.csr \
+        -CA vault/certs/ca.pem -CAkey vault/certs/ca.key -CAcreateserial \
+        -out vault/certs/vault.cert \
+        -copy_extensions copy
+
+    rm -f nginx/certs/nginx.csr vault/certs/vault.csr vault/certs/ca.key vault/certs/ca.srl
+fi
+
+chmod 644 nginx/certs/nginx.key vault/certs/vault.key
+echo "[+] All TLS certificates successfully generated."

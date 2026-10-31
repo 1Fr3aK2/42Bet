@@ -117,6 +117,7 @@ export default function PostDetail({ token, currentUser, postId, onBack, onClose
                 <input
                   type="text"
                   placeholder="Write a comment..."
+                  aria-label="Write a comment"
                   value={commentText}
                   onChange={(e) => setCommentText(e.target.value)}
                   maxLength={1000}

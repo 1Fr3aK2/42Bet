@@ -5,6 +5,7 @@ import * as bcrypt from 'bcrypt';
 import { Prisma, Role } from '@prisma/client';
 import { UpdateMeDto } from './update-me.dto';
 import { UpdatePasswordDto } from './update-password.dto';
+import { STARTING_BALANCE } from '../bets/bets.constants';
 
 
 //@UseGuards(JwtAuthGuard)
@@ -37,6 +38,7 @@ export class UsersService {
 		  data: {
 			...createUserDto,
 			password: hash,
+			wallet: STARTING_BALANCE, // set by the server, whatever the client sends
 		  },
 		  select: {
 			id: true,
@@ -105,6 +107,33 @@ export class UsersService {
         role: true,
       },
     });
+  }
+  async findMe(userId: number) {
+	const user = await this.prisma.user.findUnique({
+	  where: {
+		id: userId,
+	  },
+	  select: {
+		id: true,
+		username: true,
+		email: true,
+		role: true,
+		avatar: true,
+		wallet: true,
+		wins: true,
+		losses: true,
+		createdAt: true,
+		updatedAt: true,
+	  },
+	});
+
+	if (!user) {
+	  throw new NotFoundException(
+		`User with id ${userId} not found`,
+	  );
+	}
+
+	return user;
   }
 
   async updateMe( userId: number,	updateMeDto: UpdateMeDto,) 

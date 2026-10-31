@@ -32,12 +32,13 @@ export default function LoginModal({ onClose, onSuccess }) {
         <h2>Login</h2>
         <form onSubmit={handleSubmit}>
 
-          <input name="username" type="text" placeholder="Username" value={form.username} onChange={handleChange} required />
-          <input name="password" type="password" placeholder="Password" value={form.password} onChange={handleChange} required />
+          {/* The backend accepts the username or the email in this field */}
+          <input name="username" type="text" placeholder="Username or email" aria-label="Username or email" autoComplete="username" value={form.username} onChange={handleChange} required />
+          <input name="password" type="password" placeholder="Password" aria-label="Password" autoComplete="current-password" value={form.password} onChange={handleChange} required />
           {error && <div className="modal-error">{error}</div>}
           <button type="submit" disabled={loading}>{loading ? 'Logging in...' : 'Login'}</button>
         </form>
-        <button className="modal-close" onClick={onClose}></button>
+        <button className="modal-close" aria-label="Close" onClick={onClose}>×</button>
       </div>
     </div>
   );

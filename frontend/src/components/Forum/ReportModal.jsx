@@ -31,6 +31,7 @@ export default function ReportModal({ token, targetType, targetId, onClose }) {
           <form onSubmit={handleSubmit}>
             <textarea
               placeholder="Why are you reporting this?"
+              aria-label="Reason for the report"
               value={reason}
               onChange={(e) => setReason(e.target.value)}
               maxLength={500}

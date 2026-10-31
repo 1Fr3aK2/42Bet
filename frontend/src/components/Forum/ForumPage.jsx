@@ -82,6 +82,7 @@ export default function ForumPage({ token, currentUser, onClose }) {
           className="forum-search"
           type="text"
           placeholder="Search posts..."
+          aria-label="Search posts"
           value={search}
           onChange={(e) => { setPage(1); setSearch(e.target.value); }}
         />
@@ -90,6 +91,7 @@ export default function ForumPage({ token, currentUser, onClose }) {
           <select
             className="forum-select"
             value={sort}
+            aria-label="Sort posts"
             onChange={(e) => { setPage(1); setSort(e.target.value); }}
           >
             {SORT_OPTIONS.map((opt) => (

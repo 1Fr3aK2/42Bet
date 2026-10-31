@@ -33,6 +33,7 @@ export default function CreatePostModal({ token, onClose, onCreated }) {
           <input
             name="title"
             placeholder="Title"
+            aria-label="Title"
             value={form.title}
             onChange={handleChange}
             maxLength={100}
@@ -41,6 +42,7 @@ export default function CreatePostModal({ token, onClose, onCreated }) {
           <textarea
             name="content"
             placeholder="What's on your mind?"
+            aria-label="Post content"
             value={form.content}
             onChange={handleChange}
             maxLength={1000}

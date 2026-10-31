@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { updateUser, changePassword } from '../api/users';
+import { updateUser, changePassword, AVATAR_TYPES } from '../api/users';
 
 export default function SettingsPage({ user, onClose, onUpdate }) {
   const [tab, setTab] = useState('profile');
@@ -42,6 +42,13 @@ function ProfileTab({ user, onUpdate }) {
   function handleAvatarChange(e) {
     const file = e.target.files[0];
     if (!file) return;
+    // Pictures only: the server refuses anything else. Big photos are fine,
+    // they are shrunk before being sent (api/users.js).
+    if (!AVATAR_TYPES.includes(file.type) || file.size > 10 * 1024 * 1024) {
+      setError('The picture must be a PNG, JPEG, GIF or WebP image of 10 MB or less');
+      return;
+    }
+    setError('');
     setAvatarFile(file);
     setAvatarPreview(URL.createObjectURL(file));
   }
@@ -72,7 +79,7 @@ function ProfileTab({ user, onUpdate }) {
         </div>
         <label className="settings-avatar-upload">
           Change picture
-          <input type="file" accept="image/*" onChange={handleAvatarChange} hidden />
+          <input type="file" accept={AVATAR_TYPES.join(',')} onChange={handleAvatarChange} hidden />
         </label>
       </div>
 
@@ -83,6 +90,10 @@ function ProfileTab({ user, onUpdate }) {
           value={username}
           onChange={(e) => setUsername(e.target.value)}
           required
+          minLength={3}
+          maxLength={20}
+          pattern="[A-Za-z0-9_.\-]{3,20}"
+          title="3 to 20 letters, digits, _ . or -"
         />
       </label>
 

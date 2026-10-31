@@ -35,6 +35,44 @@ manual moderation actions, and moderation logs.
 
 ---
 
+## Rate limiting
+
+Write actions on the forum are rate-limited per authenticated user, on top of
+the general IP-based limit nginx applies to all of `/forum` (30 requests/second
+per IP — see `NGINX_CONFIG.md`). The per-user limits below are what actually
+bounds abusive behavior from a single account, since the IP-based limit alone
+doesn't distinguish one user making many requests from several users sharing
+a network:
+
+| Action | Limit | Window |
+|---|---|---|
+| `POST /forum/posts` | 5 requests | 10 minutes |
+| `POST /forum/posts/:id/comments` | 20 requests | 10 minutes |
+| `POST /forum/reports` | 10 requests | 1 hour |
+
+Each limit is keyed per `userId` (taken from the JWT, never from the request),
+so one user's activity never affects another's. Exceeding a limit returns:
+
+```http
+HTTP 429 Too Many Requests
+```
+
+with a message identifying which action was throttled. The limit resets
+automatically once the time window elapses — there is no manual unblock
+needed, and no action required by the user beyond waiting.
+
+Read endpoints (`GET /forum/posts`, `GET /forum/posts/:id`,
+`GET /forum/posts/:id/comments`) are not subject to a per-user limit, only the
+general IP-based one.
+
+Implementation detail (Redis-backed, atomic counters via `RateLimiterService`,
+shared with the login and Admin Public API rate limits) is documented in
+`RATE_LIMITING.md` and `SECURITY_REPORT.md` §4, not duplicated here — this
+section only covers what a frontend integrator needs to know: the limits
+themselves and the `429` response shape.
+
+---
+
 ## Posts
 
 ### List posts and advanced search
@@ -125,6 +163,8 @@ Validation:
 
 New posts are processed by automatic moderation before being stored.
 
+Subject to the per-user rate limit — see "Rate limiting" above.
+
 ### Update a post
 
 ```http
@@ -190,6 +230,8 @@ Comments can only be added to visible posts.
 
 New comments are processed by automatic moderation.
 
+Subject to the per-user rate limit — see "Rate limiting" above.
+
 ### Update a comment
 
 ```http
@@ -245,6 +287,8 @@ Body:
 A user cannot have more than one pending report for the same content.
 
 Content that is no longer visible cannot be reported.
+
+Subject to the per-user rate limit — see "Rate limiting" above.
 
 ### List reports
 
@@ -417,6 +461,7 @@ Common responses include:
 | `403 Forbidden` | Authenticated user lacks the required role or does not own the resource |
 | `404 Not Found` | Requested resource does not exist |
 | `409 Conflict` | Operation conflicts with the current resource state |
+| `429 Too Many Requests` | Per-user rate limit exceeded on `POST /forum/posts`, `POST /forum/posts/:id/comments`, or `POST /forum/reports` — see "Rate limiting" above |
 
 ---
 
@@ -447,3 +492,8 @@ GET /forum/posts
 
 Frontend code consuming this endpoint must therefore read the post collection
 from `data` and use `meta` for pagination controls.
+
+The frontend should handle `429` responses from the rate-limited write
+endpoints gracefully (e.g. disabling the submit button and surfacing the
+server's message) rather than retrying immediately, since the limit will not
+have cleared yet.

@@ -70,3 +70,33 @@ export function createReport(token, { targetType, targetId, reason }) {
     body: JSON.stringify({ targetType, targetId, reason }),
   });
 }
+
+// Moderators and admins only: list reports, optionally filtered by status
+// ('pending' or 'resolved'). Each report includes the reported content.
+export function getReports(token, status) {
+  return request(`/reports${status ? `?status=${encodeURIComponent(status)}` : ''}`, token);
+}
+
+// Moderators and admins only: action is 'dismiss' or 'remove', note is optional.
+export function resolveReport(token, id, { action, note }) {
+  return request(`/reports/${id}/resolve`, token, {
+    method: 'PATCH',
+    body: JSON.stringify({ action, ...(note && { note }) }),
+  });
+}
+
+// Moderators and admins only: posts and comments the automatic moderation
+// flagged. Returns { posts: [...], comments: [...] }.
+export function getPendingContent(token) {
+  return request('/moderation/pending', token);
+}
+
+// Moderators and admins only: type is 'post' or 'comment',
+// action is 'approve' (make it visible) or 'remove', note is optional.
+export function reviewContent(token, type, id, { action, note }) {
+  const resource = type === 'post' ? 'posts' : 'comments';
+  return request(`/moderation/${resource}/${id}/review`, token, {
+    method: 'PATCH',
+    body: JSON.stringify({ action, ...(note && { note }) }),
+  });
+}

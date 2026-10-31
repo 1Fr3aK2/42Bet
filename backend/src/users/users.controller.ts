@@ -50,6 +50,12 @@ import {
 	}
   
 	@UseGuards(JwtAuthGuard)
+	@Get('me')
+	getMe(@Request() req) {
+	  return this.usersService.findMe(req.user.id);
+	}
+  
+	@UseGuards(JwtAuthGuard)
 	@Patch('me')
 	updateMe(
 	  @Request() req,

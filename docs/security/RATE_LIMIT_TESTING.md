@@ -153,11 +153,11 @@ GET login_attempts:victim@test.com
 
 *(Update the "Status" column with ✅/❌ after running each test.)*
 
-**Note:** the initial test run was affected by an unrelated backend bug (HTTP 500 on `/auth/login` due to a pending Prisma migration — see `RATE_LIMITING.md`). Tests 9-11 and 13 were re-run/run after the fix (`backend_migrate` service added to `docker-compose.yml`) and confirmed correct with the backend fully functional. Test 12 remains blocked until the registration endpoint is implemented.
+**Note:** the initial test run was affected by an unrelated backend bug (HTTP 500 on `/auth/login` due to a pending Prisma migration — see `RATE_LIMITING.md`). Tests 9-11 and 13 were re-run/run after the fix (`backend_migrate` service added to `docker-compose.yml`) and confirmed correct with the backend fully functional. Test 12 remains blocked until the registration endpoint is confirmed functional and a test account is available to log in with correct credentials (also see `SECURITY_REPORT.md` §11, which tracks this same open item).
 
 ---
 
-## Known Limitations
+## Design Notes
 
 - The per-account rate limit uses the **email** as the key — it doesn't protect against account enumeration through other means (e.g. a registration endpoint confirming whether an email already exists). Out of scope for this document.
 - Blocking an account doesn't notify the legitimate user by email/SMS that their account is being targeted — could be a future improvement (outside the MVP).
@@ -167,6 +167,6 @@ GET login_attempts:victim@test.com
 
 ## Future Tests
 
-- Repeat these tests once `/auth/login` no longer has the 500 bug (see `SECURITY_TESTING.md`), to confirm the rate limit still works correctly once the backend responds normally.
-- Rate limiting on the remaining endpoints, once they exist (forum, trades) — reusing the already-implemented `RateLimiterService`.
+- **Repeat Test 12 once `/auth/login` no longer depends on a blocked registration flow** — the original blocker (the 500-on-migration bug) was fixed long ago (`backend_migrate` service), but Test 12 specifically still needs a working registration endpoint to create a disposable test account; this is the one remaining item in this document.
+- ~~Rate limiting on the remaining endpoints, once they exist (forum, trades)~~ — **done for the forum.** All three write endpoints (`createPost`, `createComment`, `createReport`) now have per-user rate limiting via the same `RateLimiterService` used here (`forum_post:${userId}` 5/10min, `forum_comment:${userId}` 20/10min, `forum_report:${userId}` 10/hour), unblocked once `JwtAuthGuard` was added to those routes. `createPost` has been tested in production with the same methodology as Tests 9-11 (5×`201`, then `429` on the 6th/7th, Redis counter confirmed) — see `SECURITY_REPORT.md` §4 and `AUTH_HARDENING_REPORT.md` §5 for the full detail; not duplicated here since this document's scope is specifically the login endpoint. A similar per-request test log for `createComment`/`createReport`, and for trades (if/when that module gets its own write-heavy endpoints), remains open.
 - Test the per-IP rate limit's behavior when nginx sits behind a shared NAT (simulate multiple "users" from the same IP) to confirm the current values (`10r/m`, `burst=5`) don't cause excessive false lockouts.

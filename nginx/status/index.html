@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Transcendence — System Status</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --card-bg: #181b21;
+    --border: #262a33;
+    --text: #e6e8eb;
+    --text-dim: #8b8f98;
+    --up: #2ecc71;
+    --degraded: #f1c40f;
+    --down: #e74c3c;
+    --unknown: #5a5f6a;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 48px 16px;
+  }
+  .container { width: 100%; max-width: 640px; }
+  h1 { font-size: 1.5rem; margin: 0 0 4px; }
+  .subtitle { color: var(--text-dim); font-size: 0.9rem; margin-bottom: 32px; }
+
+  .overall {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 20px;
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    margin-bottom: 24px;
+  }
+  .overall .dot { width: 14px; height: 14px; border-radius: 50%; flex-shrink: 0; }
+  .overall .label { font-size: 1.1rem; font-weight: 600; }
+  .overall .ts { margin-left: auto; font-size: 0.8rem; color: var(--text-dim); }
+
+  .components {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .component {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 18px;
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+  }
+  .component .dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+  .component .name { text-transform: capitalize; }
+  .component .state { margin-left: auto; font-size: 0.85rem; color: var(--text-dim); text-transform: capitalize; }
+
+  .dot.up { background: var(--up); box-shadow: 0 0 8px var(--up); }
+  .dot.degraded { background: var(--degraded); box-shadow: 0 0 8px var(--degraded); }
+  .dot.down { background: var(--down); box-shadow: 0 0 8px var(--down); }
+  .dot.unknown { background: var(--unknown); }
+
+  .error-banner {
+    margin-top: 24px;
+    padding: 14px 18px;
+    background: rgba(231, 76, 60, 0.1);
+    border: 1px solid var(--down);
+    border-radius: 10px;
+    color: var(--down);
+    font-size: 0.9rem;
+    display: none;
+  }
+
+  footer {
+    margin-top: 40px;
+    font-size: 0.75rem;
+    color: var(--text-dim);
+    text-align: center;
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>System Status</h1>
+  <p class="subtitle">Live status of Transcendence's core services</p>
+
+  <div class="overall">
+    <span class="dot unknown" id="overall-dot"></span>
+    <span class="label" id="overall-label">Checking...</span>
+    <span class="ts" id="overall-ts"></span>
+  </div>
+
+  <div class="components" id="components"></div>
+
+  <div class="error-banner" id="error-banner">
+    Unable to reach the health check service. Retrying...
+  </div>
+
+  <footer>Auto-refreshes every 10 seconds</footer>
+</div>
+
+<script>
+  const STATUS_LABELS = { up: 'Operational', degraded: 'Degraded', down: 'Down', unknown: 'Unknown' };
+
+  function renderOverall(status, timestamp) {
+    const dot = document.getElementById('overall-dot');
+    const label = document.getElementById('overall-label');
+    const ts = document.getElementById('overall-ts');
+
+    dot.className = 'dot ' + status;
+    label.textContent = STATUS_LABELS[status] || 'Unknown';
+    ts.textContent = timestamp ? 'Last checked: ' + new Date(timestamp).toLocaleTimeString() : '';
+  }
+
+  function renderComponents(components) {
+    const container = document.getElementById('components');
+    container.innerHTML = '';
+
+    for (const [name, state] of Object.entries(components)) {
+      const row = document.createElement('div');
+      row.className = 'component';
+
+      const dot = document.createElement('span');
+      dot.className = 'dot ' + (state === 'up' ? 'up' : 'down');
+
+      const nameEl = document.createElement('span');
+      nameEl.className = 'name';
+      nameEl.textContent = name;
+
+      const stateEl = document.createElement('span');
+      stateEl.className = 'state';
+      stateEl.textContent = state === 'up' ? 'Operational' : 'Down';
+
+      row.append(dot, nameEl, stateEl);
+      container.appendChild(row);
+    }
+  }
+
+  async function checkHealth() {
+    const errorBanner = document.getElementById('error-banner');
+    try {
+      const res = await fetch('/health', { cache: 'no-store' });
+      const data = await res.json();
+
+      errorBanner.style.display = 'none';
+      renderOverall(data.status, data.timestamp);
+      renderComponents(data.components || {});
+    } catch (err) {
+      errorBanner.style.display = 'block';
+      renderOverall('unknown', null);
+    }
+  }
+
+  checkHealth();
+  setInterval(checkHealth, 10000);
+</script>
+</body>
+</html>

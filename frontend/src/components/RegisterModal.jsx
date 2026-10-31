@@ -40,13 +40,14 @@ export default function RegisterModal({ onClose, onSuccess }) {
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <h2>Register</h2>
         <form onSubmit={handleSubmit}>
-          <input name="username" placeholder="Username" value={form.username} onChange={handleChange} required />
-          <input name="email" type="email" placeholder="Email" value={form.email} onChange={handleChange} required />
-          <input name="password" type="password" placeholder="Password" value={form.password} onChange={handleChange} required minLength={8} />
+          {/* Same username rule as the backend (backend/src/users/user-rules.ts) */}
+          <input name="username" placeholder="Username" aria-label="Username" autoComplete="username" value={form.username} onChange={handleChange} required minLength={3} maxLength={20} pattern="[A-Za-z0-9_.\-]{3,20}" title="3 to 20 letters, digits, _ . or -" />
+          <input name="email" type="email" placeholder="Email" aria-label="Email" autoComplete="email" value={form.email} onChange={handleChange} required />
+          <input name="password" type="password" placeholder="Password (8+ characters)" aria-label="Password" autoComplete="new-password" value={form.password} onChange={handleChange} required minLength={8} />
           {error && <div className="modal-error">{error}</div>}
           <button type="submit" disabled={loading}>{loading ? 'Registering...' : 'Register'}</button>
         </form>
-        <button className="modal-close" onClick={onClose}>×</button>
+        <button className="modal-close" aria-label="Close" onClick={onClose}>×</button>
       </div>
     </div>
   );

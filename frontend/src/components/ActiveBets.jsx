@@ -1,7 +1,8 @@
-import { fmt } from '../utils/format';
+import { fmt, formatTime } from '../utils/format';
 import { PAYOUT } from '../data/constants';
+import { secondsLeft } from '../hooks/useBets';
 
-export default function ActiveBets({ bets }) {
+export default function ActiveBets({ bets, now }) {
   const visible = bets.filter((b) => b.status === 'active' || b.status === 'queued');
   if (visible.length === 0) return null;
 
@@ -21,7 +22,11 @@ export default function ActiveBets({ bets }) {
           </div>
           <div className="active-bet-row">
             <span className="active-bet-label">Entry price</span>
-            <span className="active-bet-value">{bet.entry ? fmt(bet.entry) : '--'}</span>
+            <span className="active-bet-value">{bet.entryPrice ? fmt(bet.entryPrice) : '--'}</span>
+          </div>
+          <div className="active-bet-row">
+            <span className="active-bet-label">Ends in</span>
+            <span className="active-bet-value">{formatTime(secondsLeft(bet, now))}</span>
           </div>
           <div className="active-bet-row">
             <span className="active-bet-label">Amount</span>

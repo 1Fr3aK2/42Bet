@@ -33,6 +33,8 @@ model User {
   reportsModerated Report[]   @relation("ReportsModerated")
 
   moderationLogs   ModerationLog[]
+
+  bets             Bet[]
 }
 
 model Post {
@@ -98,4 +100,24 @@ model ModerationLog {
   createdAt   DateTime @default(now())
 
   moderator   User     @relation(fields: [moderatorId], references: [id])
+}
+
+model Bet {
+  id         Int       @id @default(autoincrement())
+  coin       String                                // BTC | ETH
+  direction  String                                // up | down
+  amount     Int                                   // stake in T$, debited when the bet is placed
+  entryPrice Float
+  exitPrice  Float?
+  status     String    @default("active")          // active | won | lost | refunded
+  payout     Int       @default(0)                 // T$ credited when the bet is settled
+  expiresAt  DateTime
+  settledAt  DateTime?
+  createdAt  DateTime  @default(now())
+
+  userId     Int
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([status, expiresAt])
 }

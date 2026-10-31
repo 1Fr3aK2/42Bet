@@ -16,6 +16,8 @@ Interactive Swagger documentation:
 https://localhost/api/admin/docs
 ```
 
+The Swagger UI documentation page is accessible directly via the browser. To execute and test protected endpoints through the interface, click the **Authorize 🔒** button at the top of the Swagger UI and enter your `ADMIN_API_KEY`. The interface will automatically attach the `X-API-Key` header to all subsequent API calls.
+
 ## Authentication
 
 All Public Admin API endpoints are protected by `AdminApiKeyGuard`.
@@ -125,18 +127,35 @@ Status: HTTP 429 when exceeded
 The guard calls:
 
 ```typescript
-this.rateLimiterService.checkLimit(
-  'admin_api_requests:${clientIp}',
+const clientIp = (request.headers['x-real-ip'] as string) || request.ip;
+
+await this.rateLimiterService.checkLimit(
+  `admin_api_requests:${clientIp}`,
   100,
   60,
 );
 ```
 
+> **Correction to this revision:** this section previously documented a
+> single shared key (`'admin_api_requests'`, no client identifier), which
+> meant one heavy consumer could exhaust the quota for every other client.
+> That was a real bug, found and fixed — see `AUTH_HARDENING_REPORT.md` §7
+> and `SECURITY_REPORT.md` §4. The guard now keys the counter on the
+> client's IP (read from `X-Real-IP`, set by nginx, with a fallback to
+> `request.ip`), so each client gets its own 100 req/60s quota. Tested
+> directly against the backend (bypassing nginx's stricter limit): exactly
+> 100 consecutive successes followed by `429` from the 101st request.
+
 The Redis-backed limiter is applied after API-key authentication.
 
 Using Redis keeps the counter outside the Node.js process and allows the existing generic rate-limiting infrastructure to be reused.
 
-The backend rate limiter maintains a separate request counter for each client IP, using the `admin_api_requests:<client-ip>` key prefix.
+**Design note:** clients sharing the same IP/NAT still
+share a quota — this fix addresses one consumer being able to exhaust
+*everyone's* quota, not per-API-key isolation. A future improvement would
+be keying on the API key itself (or a per-client key issued individually)
+rather than IP, if multiple genuinely distinct consumers end up behind the
+same network.
 
 ## Swagger / OpenAPI
 
@@ -165,6 +184,15 @@ This means that the documentation describes the Public Admin API rather than eve
 
 Swagger also allows the API key to be entered using the **Authorize** button and then used when testing protected endpoints.
 
+**The documentation pages themselves now require the API key to view, not
+just to call the endpoints they describe.** `SwaggerModule.setup()` does
+not create controller routes, so there's no `@UseGuards()` to attach
+directly — instead, an Express middleware (`app.use(...)`) is registered in
+`main.ts` *before* `SwaggerModule.setup()`, reusing the same SHA-256 hash +
+`timingSafeEqual` check as `AdminApiKeyGuard`. This was a real gap found
+and fixed: both paths below were previously reachable by anyone, with no
+key at all — see `AUTH_HARDENING_REPORT.md` §6.
+
 Interactive documentation is available at:
 
 ```text
@@ -176,6 +204,9 @@ The OpenAPI JSON document is available at:
 ```text
 https://localhost/api/admin/docs-json
 ```
+
+Both now return `401` without a valid `X-API-Key` header, and `200` with
+one — confirmed for both the UI and the raw JSON spec.
 
 ## Testing
 
@@ -261,8 +292,9 @@ nginx/template/default.conf.template
 - The configured administrator is resolved from the database instead of using a hardcoded user ID.
 - `AdminIdentityService` verifies that the configured database user has the `ADMIN` role.
 - Existing application validation, moderation and ownership rules are reused where applicable.
-- Requests are protected by both Nginx and backend/Redis rate limiting.
+- Requests are protected by both Nginx and backend/Redis rate limiting, the latter now keyed per client IP rather than shared globally.
 - The API key is provided to the backend through the project's Vault integration.
+- The Swagger documentation pages themselves require the API key to view, not just to call the documented endpoints.
 
 ## Known simplifications
 
@@ -270,6 +302,9 @@ This API is designed for the Transcendence project environment rather than a pro
 
 In particular:
 
-- the backend Redis rate limiter uses per-IP counters rather than separate counters for individual API keys;
+- the backend Redis rate limiter keys its counter on client IP rather than
+  on the API key or on a true per-client identity — clients sharing an
+  IP/NAT still share a quota (see "Backend + Redis" above for the fix this
+  replaced and what remains open);
 - the configured API key represents the administrative integration rather than individual external API clients;
 - the local HTTPS environment uses project-generated certificates, so command-line tests may require `curl -k`.

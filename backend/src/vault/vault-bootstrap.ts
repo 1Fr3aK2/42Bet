@@ -6,16 +6,16 @@ interface VaultKvResponse {
   data: { data: Record<string, string> };
 }
 
-
 export async function loadSecretsFromVault(): Promise<void> {
-  const vaultAddr = process.env.VAULT_ADDR; // ex: https://vault:8200
+  const vaultAddr = process.env.VAULT_ADDR;
 
   if (!vaultAddr) {
-    throw new Error('VAULT_ADDR não está definido');
+    throw new Error('VAULT_ADDR not defined');
   }
 
   const roleId = readFileSync(`${APPROLE_DIR}/role_id`, 'utf-8').trim();
   const secretId = readFileSync(`${APPROLE_DIR}/secret_id`, 'utf-8').trim();
+
 
   const loginRes = await fetch(`${vaultAddr}/v1/auth/approle/login`, {
     method: 'POST',
@@ -24,17 +24,34 @@ export async function loadSecretsFromVault(): Promise<void> {
 
   if (!loginRes.ok) {
     throw new Error(
-      `Falha no login AppRole ao Vault: ${loginRes.status} ${await loginRes.text()}`,
+      `Error logging AppRole to Vault: ${loginRes.status} ${await loginRes.text()}`,
     );
   }
 
   const loginBody = await loginRes.json();
   const clientToken = loginBody.auth.client_token;
 
+
+  const pgData = await readVaultSecret(vaultAddr, clientToken, 'postgres');
+  const pgUser = pgData.user;
+  const pgPassword = pgData.password;
+  const pgDb = process.env.POSTGRES_DB || 'appdb';
+  if (!pgUser || !pgPassword) {
+    throw new Error('secret/postgres needs the fields "user" and "password" defined');
+  }
+  process.env.DATABASE_URL = `postgresql://${pgUser}:${pgPassword}@postgres:5432/${pgDb}?schema=public`;
+
+  const redisData = await readVaultSecret(vaultAddr, clientToken, 'redis');
+  const redisPassword = redisData.password;
+  if (!redisPassword) {
+    throw new Error('secret/redis needs the field "password" defined');
+  }
+  process.env.REDIS_URL = `redis://:${redisPassword}@redis:6379`;
+
   const adminApiData = await readVaultSecret(vaultAddr, clientToken, 'admin-api');
   const adminApiKey = adminApiData.key;
   if (!adminApiKey) {
-    throw new Error('secret/admin-api não tem o campo "key" definido');
+    throw new Error('secret/admin-api does not have "key" defined');
   }
   process.env.ADMIN_API_KEY = adminApiKey;
 
@@ -42,7 +59,7 @@ export async function loadSecretsFromVault(): Promise<void> {
   const { username, email, password } = adminAccountData;
   if (!username || !email || !password) {
     throw new Error(
-      'secret/admin-account tem de ter os campos "username", "email" e "password" definidos',
+      'secret/admin-account needs the fields "username", "email" and "password" defined',
     );
   }
   process.env.ADMIN_USERNAME = username;
@@ -52,7 +69,7 @@ export async function loadSecretsFromVault(): Promise<void> {
   const jwtData = await readVaultSecret(vaultAddr, clientToken, 'jwt');
   const jwtSecret = jwtData.secret;
   if (!jwtSecret) {
-    throw new Error('secret/jwt não tem o campo "secret" definido');
+    throw new Error('secret/jwt does not have "secret" field defined');
   }
   process.env.JWT_SECRET = jwtSecret;
 }
@@ -68,7 +85,7 @@ async function readVaultSecret(
 
   if (!res.ok) {
     throw new Error(
-      `Falha ao ler secret/${path} do Vault: ${res.status} ${await res.text()}`,
+      `Error reading secret/${path} from Vault: ${res.status} ${await res.text()}`,
     );
   }
 

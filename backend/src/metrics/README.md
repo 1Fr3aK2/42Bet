@@ -163,14 +163,26 @@ the symptom (the 502).
 
 ## Relation to `health/`
 
-This module is intentionally separate from the existing `health/` module:
+This module remains intentionally separate from `health/` — the two answer
+different questions:
 
-- **`health/`** answers "is this service alive?" — a simple up/down check
-  used by Docker healthchecks.
-- **`metrics/`** answers "what are this service's detailed numbers over
-  time?" — used by Prometheus for monitoring, dashboards, and alerting,
-  now including application-level request/latency data, not just process
-  stats.
+- **`metrics/`** (this module) answers "what are this service's detailed
+  numbers over time?" — scraped periodically by Prometheus, used for
+  dashboards, rates, percentiles, and alerting thresholds. Not meant to be
+  consumed directly by a human or read in real time.
+- **`health/`** answers "is this service alive, right now?" — a point-in-time
+  check, read synchronously by whoever needs an immediate yes/no (or
+  component-by-component) answer. That module has since grown two distinct
+  endpoints of its own, which mirror this same kind of internal/external
+  split: `GET /health` (minimal, used by the Docker Compose `healthcheck:`
+  for the `backend` service itself) and `GET /health/status` (richer, checks
+  one more component, and is the one proxied publicly through nginx at
+  `/health` for the standalone status page at `/status` to poll). See
+  `SECURITY_REPORT.md` §7 for the full reasoning behind keeping those two
+  endpoints separate.
 
-Different responsibilities, kept in separate modules for clarity as the
-project grows.
+Metrics and health checks could in principle overlap (e.g. Prometheus could
+scrape a `/health`-style endpoint instead), but are kept as separate modules
+and separate concerns here: Prometheus/Grafana are for trends an operator
+watches over time, while `/health` is for an immediate status a script,
+load balancer, or human visiting `/status` can act on right now.

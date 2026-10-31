@@ -36,21 +36,21 @@ services:
     restart: on-failure
 
   backend:
-     container_name: backend
-     build:
-       context: ./backend
-     networks:
-       - transcendence
-     environment:
-       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?schema=public
-       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
-       VAULT_ADDR: ${VAULT_ADDR}
-       VAULT_CACERT: ${VAULT_CACERT}
-       NODE_EXTRA_CA_CERTS: ${VAULT_CACERT}
-     volumes:
-       - ./vault/certs:/etc/vault/certs:ro
-       - vault-approle:/vault/approle:ro
-     depends_on:
+    container_name: backend
+    build:
+      context: ./backend
+    networks:
+      - transcendence
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      VAULT_ADDR: ${VAULT_ADDR}
+      VAULT_CACERT: ${VAULT_CACERT}
+      NODE_EXTRA_CA_CERTS: ${VAULT_CACERT}
+      ELASTIC_PASSWORD: "${ELASTIC_PASSWORD}"
+    volumes:
+      - ./vault/certs:/etc/vault/certs:ro
+      - vault-approle:/vault/approle:ro
+    depends_on:
       postgres:
         condition: service_healthy
       redis:
@@ -63,13 +63,13 @@ services:
         condition: service_completed_successfully
       vault_init:
         condition: service_completed_successfully
-     healthcheck:
-       test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8000/health"]
-       interval: 10s
-       timeout: 5s
-       retries: 5
-       start_period: 30s
-     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
 
   frontend:
     container_name: frontend
@@ -112,6 +112,7 @@ services:
       - ./nginx/modsecurity/before-crs.conf:/etc/modsecurity.d/owasp-crs/rules/REQUEST-900-EXCLUSION-RULES-BEFORE-CRS.conf
       - ./nginx/modsecurity/exclusions.conf:/etc/modsecurity.d/owasp-crs/rules/RESPONSE-999-EXCLUSION-RULES-AFTER-CRS.conf
       - modsec-audit-log:/var/log/modsecurity
+      - ./nginx/status:/usr/share/nginx/status:ro
     depends_on:
       backend:
         condition: service_healthy
@@ -166,8 +167,8 @@ services:
       VAULT_ADDR: ${VAULT_ADDR}
       VAULT_CACERT: ${VAULT_CACERT}
     volumes:
-      - ./vault/config:/etc/vault/config
-      - ./vault/certs:/etc/vault/certs
+      - ./vault/config:/etc/vault/config:ro
+      - ./vault/certs:/etc/vault/certs:ro
       - vault-data:/vault/data
     healthcheck:
       test: ["CMD-SHELL", "vault status; [ $? -ne 1 ]"]
@@ -217,8 +218,8 @@ services:
       JWT_SECRET: ${JWT_SECRET}
     entrypoint: ["sh", "/etc/vault/config/vault-init.sh"]
     volumes:
-      - ./vault/config:/etc/vault/config
-      - ./vault/certs:/etc/vault/certs
+      - ./vault/config:/etc/vault/config:ro
+      - ./vault/certs:/etc/vault/certs:ro
       - vault-keys:/vault/keys
       - vault-approle:/vault/approle
     depends_on:
@@ -228,7 +229,7 @@ services:
         condition: service_completed_successfully
       vault-approle-init:
         condition: service_completed_successfully
-    restart: on-failure
+    restart: on-failure:3
 
   grafana:
     container_name: grafana
@@ -364,6 +365,12 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  elasticsearch_backups_init:
+    image: alpine
+    command: ["chown", "-R", "1000:0", "/usr/share/elasticsearch/backups"]
+    volumes:
+      - ./backups/elasticsearch:/usr/share/elasticsearch/backups
+
   elasticsearch:
     container_name: elasticsearch
     image: docker.elastic.co/elasticsearch/elasticsearch:8.19.18
@@ -371,13 +378,21 @@ services:
       - transcendence
     environment:
       discovery.type: single-node
-      xpack.security.enabled: "false"
+      xpack.security.enabled: "true"
+      xpack.security.http.ssl.enabled: "false"
+      xpack.security.transport.ssl.enabled: "false"
+      ELASTIC_PASSWORD: "${ELASTIC_PASSWORD}"
       ES_JAVA_OPTS: "-Xms512m -Xmx512m"
+      path.repo: /usr/share/elasticsearch/backups
     mem_limit: 1g
     volumes:
       - elasticsearch-data:/usr/share/elasticsearch/data
+      - ./backups/elasticsearch:/usr/share/elasticsearch/backups
+    depends_on:
+      elasticsearch_backups_init:
+        condition: service_completed_successfully
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:9200/_cluster/health || exit 1"]
+      test: ["CMD-SHELL", "curl -sf -u elastic:$$ELASTIC_PASSWORD http://localhost:9200/_cluster/health || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -391,14 +406,53 @@ services:
       - transcendence
     environment:
       LS_JAVA_OPTS: "-Xms256m -Xmx256m"
+      ELASTIC_PASSWORD: "${ELASTIC_PASSWORD}"
     mem_limit: 512m
     volumes:
       - ./logging/logstash/pipeline:/usr/share/logstash/pipeline:ro
     depends_on:
       elasticsearch:
         condition: service_healthy
+      elasticsearch_ilm_init:
+        condition: service_completed_successfully
     restart: unless-stopped
 
+
+  kibana_user_init:
+    container_name: kibana_user_init
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.19.18
+    networks:
+      - transcendence
+    environment:
+      ELASTIC_PASSWORD: "${ELASTIC_PASSWORD}"
+      KIBANA_PASSWORD: "${KIBANA_PASSWORD}"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        curl -sf -X POST -u "elastic:$$ELASTIC_PASSWORD" \
+          -H "Content-Type: application/json" \
+          http://elasticsearch:9200/_security/user/kibana_system/_password \
+          -d "{\"password\":\"$$KIBANA_PASSWORD\"}"
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    restart: on-failure
+
+  elasticsearch_ilm_init:
+    container_name: elasticsearch_ilm_init
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.19.18
+    networks:
+      - transcendence
+    environment:
+      ELASTIC_PASSWORD: "${ELASTIC_PASSWORD}"
+    entrypoint: ["/bin/sh"]
+    command: ["/scripts/ilm-init.sh"]
+    volumes:
+      - ./logging/elasticsearch/ilm-init.sh:/scripts/ilm-init.sh:ro
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    restart: on-failure
   kibana:
     container_name: kibana
     image: docker.elastic.co/kibana/kibana:8.19.18
@@ -406,12 +460,16 @@ services:
       - transcendence
     environment:
       ELASTICSEARCH_HOSTS: '["http://elasticsearch:9200"]'
+      ELASTICSEARCH_USERNAME: "kibana_system"
+      ELASTICSEARCH_PASSWORD: "${KIBANA_PASSWORD}"
       SERVER_BASEPATH: "/kibana"
       SERVER_REWRITEBASEPATH: "true"
-      XPACK_ENCRYPTEDSAVEDOBJECTS_ENCRYPTIONKEY: "y3F/ugocszBablaOsTU8y1WWvLMyvp9NmgSf+vIjjoo="
+      XPACK_ENCRYPTEDSAVEDOBJECTS_ENCRYPTIONKEY: "${XPACK_ENCRYPTEDSAVEDOBJECTS_ENCRYPTIONKEY}"
     depends_on:
       elasticsearch:
         condition: service_healthy
+      kibana_user_init:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:5601/kibana/api/status || exit 1"]
       interval: 10s

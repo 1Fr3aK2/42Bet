@@ -11,8 +11,16 @@ async function bootstrap() {
 
   const app = await NestFactory.create(AppModule);
 
+  // Allow requests from:
+  //   - http://localhost:5173  → local dev mode (npm run dev, outside Docker)
+  //   - https://localhost      → production via Nginx on port 443
+  //   - https://localhost:8443 → production on rootless Docker (alternative port)
   app.enableCors({
-    origin: 'http://localhost:5173',
+    origin: [
+      'http://localhost:5173',
+      'https://localhost',
+      'https://localhost:8443',
+    ],
     credentials: true,
   });
 
@@ -24,6 +32,11 @@ async function bootstrap() {
     }),
   );
 
+  // Swagger for the Public Admin API.
+  // The page itself is public (no middleware guard) so the browser can load it.
+  // The "Authorize" button in the UI lets the evaluator enter the X-API-Key,
+  // and every request made from the Swagger UI will then include that header.
+  // All actual endpoints are still protected by AdminApiKeyGuard.
   const config = new DocumentBuilder()
     .setTitle('Transcendence Public Admin API')
     .setDescription(
