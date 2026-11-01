@@ -22,7 +22,7 @@ export class AdminApiKeyGuard implements CanActivate {
     const request = context.switchToHttp().getRequest();      // Gets the current HTTP request
     const providedKey = request.headers['x-api-key'];         // Extracts the API key from the request header
 
-    if (typeof providedKey !== 'string' || providedKey !== expectedKey) {
+    if (providedKey !== expectedKey) {
       throw new UnauthorizedException('Invalid API key');
     }
 
