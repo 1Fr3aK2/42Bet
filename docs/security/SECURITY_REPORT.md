@@ -322,30 +322,48 @@ now in place:
 - **Aggregated health check** — the backend exposes two endpoints, kept
   deliberately separate: `GET /health` (used by the Docker Compose
   `healthcheck:` for the `backend` service itself — checks database, Redis,
-  and Vault only) and `GET /health/status` (a richer endpoint, always `200`,
-  additionally checking Elasticsearch, meant for external/public consumption).
-  They were kept separate so that Elasticsearch — which can legitimately take
-  longer to become ready, e.g. after a `make re` — never causes the backend's
-  own Docker healthcheck to fail and delay services that depend on
-  `backend: condition: service_healthy`.
+  and Vault only) and `GET /health/status` (always `200`, additionally
+  checking Elasticsearch, meant for external/public consumption and
+  returning only an aggregated state, see "Minimal public information"
+  below). They were kept separate so that Elasticsearch — which can
+  legitimately take longer to become ready, e.g. after a `make re` — never
+  causes the backend's own Docker healthcheck to fail and delay services
+  that depend on `backend: condition: service_healthy`.
 - **Public exposure** — `location /health` in nginx, proxying to
   `/health/status`, with a dedicated rate-limit zone (`10r/s`, burst 20).
+- **Minimal public information (audit finding F-03, low severity)** — the
+  first version of `/health/status` returned the state of each individual
+  service (`database`, `redis`, `vault`, `elasticsearch`) to anyone, without
+  authentication. That told an attacker which services the stack uses and
+  when one of them was down or degraded. No credentials, internal addresses
+  or detailed error messages were exposed, hence the low severity, but the
+  public page does not need that detail. The endpoint still checks all four
+  services, but now returns only the aggregated `status` (`up` / `degraded` /
+  `down`), the `timestamp`, and two generic groups: `core` (database, Redis
+  and Vault, what the application needs to work) and `monitoring`
+  (Elasticsearch, logging, which does not affect users). The per-service
+  detail stays in `GET /health`, which nginx never reaches, because the
+  `/health` location rewrites every request to `/health/status`: it is only
+  reachable inside the Docker network. Check:
+  `curl -sk https://localhost/health` must not show `database`, `redis`,
+  `vault` or `elasticsearch`.
 - **Status page** — a standalone HTML/JS page served directly by nginx at
   `/status` (not bundled into the React frontend), polling `/health` every 10
-  seconds and rendering overall status plus a per-component breakdown. Kept
+  seconds and rendering overall status plus a breakdown by group (`core`,
+  `monitoring`). Kept
   outside the frontend's React bundle deliberately: a status page is only
   useful if it can still report a problem when other parts of the stack
   (including the frontend itself) are degraded or failing to build/serve.
 - **Disaster recovery procedures** — documented in full in
   `docs/DISASTER_RECOVERY.md`: a tested, step-by-step Postgres restore
   procedure (identify backup → stop writers → safety dump of current state →
-  drop/recreate database → restore → restart → verify via `/health`); a
-  recoverability table per Docker volume; and a dedicated explanation of why
-  Vault's unseal key material is *not* recoverable after loss by design
-  (Shamir's Secret Sharing), with the actual mitigation used in this project
-  (`.env` is the real source of truth for secret values, not Vault's internal
-  storage — a full Vault reinitialization reproduces the same secrets
-  automatically from `.env`).
+  drop/recreate database → restore → restart → verify via the internal
+  `/health`); a recoverability table per Docker volume; and a dedicated
+  explanation of why Vault's unseal key material is *not* recoverable after
+  loss by design (Shamir's Secret Sharing), with the actual mitigation used
+  in this project (`.env` is the real source of truth for secret values, not
+  Vault's internal storage — a full Vault reinitialization reproduces the
+  same secrets automatically from `.env`).
 
 ---
 

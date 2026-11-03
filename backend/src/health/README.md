@@ -35,6 +35,16 @@ qualquer serviço que dependa de `backend: condition: service_healthy` —
 mesmo o backend em si estando perfeitamente funcional. Ver
 `SECURITY_REPORT.md` §7.
 
+**Este é o único endpoint com o estado de cada serviço em separado, e por
+isso não é exposto publicamente.** O nginx reescreve qualquer pedido a
+`/health*` para `/health/status` (ver `/health/status` abaixo), pelo que o
+`/health` do backend só é acessível dentro da rede Docker. Para o consultar
+a partir do host:
+
+```bash
+docker compose exec backend wget -qO- http://localhost:8000/health
+```
+
 ### Resposta — 200 OK
 
 ```json
@@ -57,7 +67,7 @@ marcados como `"down"`.
 
 ### Descrição
 
-Endpoint mais rico, pensado para consumo **externo** — é o que está exposto
+Endpoint pensado para consumo **externo** — é o que está exposto
 publicamente através do nginx em `/health` (ver `NGINX_CONFIG.md`), e o que
 a status page pública (`/status`) consulta a cada 10 segundos para mostrar o
 estado do sistema.
@@ -71,6 +81,13 @@ em baixo — porque o próprio propósito deste endpoint é reportar o estado,
 não falhar quando algo está mal. Um `503` aqui esconderia exatamente a
 informação que a status page precisa de mostrar.
 
+**A resposta pública não revela os serviços individuais (auditoria F-03).**
+O endpoint verifica os quatro componentes, mas só devolve o estado agregado
+e dois grupos genéricos. Assim, quem consulta o endpoint público não fica a
+saber que serviços existem na stack, nem quando um deles em concreto está em
+baixo. O detalhe por serviço continua disponível no `GET /health`, que o
+nginx nunca encaminha.
+
 ### Resposta
 
 ```json
@@ -78,10 +95,8 @@ informação que a status page precisa de mostrar.
   "status": "up",
   "timestamp": "2026-09-30T15:12:03.569Z",
   "components": {
-    "database": "up",
-    "redis": "up",
-    "vault": "up",
-    "elasticsearch": "up"
+    "core": "up",
+    "monitoring": "up"
   }
 }
 ```
@@ -92,6 +107,17 @@ informação que a status page precisa de mostrar.
 - `"degraded"` — pelo menos um componente em baixo, mas não todos
 - `"down"` — todos os componentes em baixo
 
+O `status` é calculado sobre os quatro componentes reais, não sobre os dois
+grupos. Os grupos de `components` são:
+
+| Grupo | Componentes | Valor |
+|---|---|---|
+| `core` | PostgreSQL, Redis e Vault (o que a aplicação precisa para funcionar) | `"up"` só se os três estiverem em cima, senão `"down"` |
+| `monitoring` | Elasticsearch (logging, que não afeta o utilizador) | `"up"` ou `"down"` |
+
+Por exemplo, com o Elasticsearch em baixo e o resto operacional, `status` é
+`"degraded"`, `core` é `"up"` e `monitoring` é `"down"`.
+
 ---
 
 # Porque dois endpoints em vez de um
@@ -100,11 +126,11 @@ Cada um responde a uma pergunta diferente:
 
 - **`/health`** — "o backend está pronto para o Docker o considerar
   saudável?" — usado por máquinas, internamente, com consequências diretas
-  na ordem de arranque do stack.
+  na ordem de arranque do stack. É também o único com o detalhe por serviço.
 - **`/health/status`** — "qual é o estado atual do sistema, para quem está a
   olhar de fora?" — usado por humanos (via `/status`) ou por scripts
   externos que só querem saber o estado, sem afetar o arranque de mais
-  nada.
+  nada, e sem receber o detalhe por serviço.
 
 Detalhe de implementação, bugs encontrados, e a exposição pública completa
 (nginx + status page + rate limiting dedicado) estão documentados em

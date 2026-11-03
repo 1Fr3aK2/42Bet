@@ -5,8 +5,9 @@ transcendence project.
 
 > **Note on this revision:** this document has been updated to match the
 > current `default.conf.template`. The rate limiting, security headers, nginx
-> version hiding (`server_tokens off`), and per-module routing sections below
-> reflect the live configuration.
+> version hiding (`server_tokens off`), the public health check (aggregated
+> state only), and per-module routing sections below reflect the live
+> configuration.
 
 ## General structure
 
@@ -115,9 +116,9 @@ location / {
 }
 ```
 
-Routes all root traffic to the frontend service (`frontend:5173`). 
+Routes all root traffic to the frontend service (`frontend:5173`).
 
-Crucially, `proxy_http_version 1.1;`, `proxy_set_header Upgrade $http_upgrade;`, and `proxy_set_header Connection $connection_upgrade;` are configured on this block. In modern Vite development environments, the browser client establishes a WebSocket connection on the root origin (`wss://localhost/?token=...`) for Hot Module Replacement (HMR) and live development state synchronization. 
+Crucially, `proxy_http_version 1.1;`, `proxy_set_header Upgrade $http_upgrade;`, and `proxy_set_header Connection $connection_upgrade;` are configured on this block. In modern Vite development environments, the browser client establishes a WebSocket connection on the root origin (`wss://localhost/?token=...`) for Hot Module Replacement (HMR) and live development state synchronization.
 
 Without WebSocket upgrade headers, Nginx processes the handshake as a standard HTTP request and returns `200 OK` rather than `101 Switching Protocols`. This previously caused `Error during WebSocket handshake: Unexpected response code: 200` and secondary `SyntaxError: Failed to construct 'WebSocket'` exceptions in the Google Chrome developer console. Including the upgrade headers ensures compliant, error-free reverse-proxying across all client connections, satisfying the subject v21.1 mandate of zero browser console errors.
 
@@ -282,11 +283,31 @@ location /health {
 }
 ```
 
-Proxies to the backend's `/health/status` endpoint (not the plainer `/health` used internally by Docker's own healthcheck) — the richer, always-`200` endpoint intended for external consumption. Consumed by the status page at `/status` above. Uses a `rewrite` rule to map the request URI to `/health/status` because variable-based `proxy_pass` cannot perform URI replacement directly in the directive (see "DNS resolution" above).
+Proxies to the backend's `/health/status` endpoint (not `/health`, which Docker's own healthcheck uses internally and which carries the per-service detail) — the always-`200` endpoint intended for external consumption. Consumed by the status page at `/status` above. Uses a `rewrite` rule to map the request URI to `/health/status` because variable-based `proxy_pass` cannot perform URI replacement directly in the directive (see "DNS resolution" above).
+
+**What the public response contains.** Only the aggregated state, a timestamp and two generic groups, never the individual services (audit finding F-03):
+
+```json
+{
+  "status": "up",
+  "timestamp": "2026-11-03T04:17:02.415Z",
+  "components": { "core": "up", "monitoring": "up" }
+}
+```
+
+- `status` is `up`, `degraded` or `down`, computed by the backend over the four real components.
+- `core` groups the database, Redis and Vault; `monitoring` is Elasticsearch (logging).
+- The per-service detail stays in the backend's internal `GET /health`. Since `rewrite ^` maps **every** request under `/health` to `/health/status`, that internal endpoint cannot be reached through nginx; it is only reachable inside the Docker network.
+
+**Tested with:**
+```bash
+curl -sk https://localhost/health | python3 -m json.tool
+```
+Expected: `status`, `timestamp` and `components` with only `core` and `monitoring`; `database`, `redis`, `vault` and `elasticsearch` must not appear.
 
 ## Per-user rate limiting (forum)
 
-The forum's rate limiting uses a two-tier approach. At the nginx layer, the `forum` zone (defined above) acts as a coarse, IP-level first line of defense. Finer-grained, per-user limits are enforced by the backend itself via the `RateLimiterService` (because nginx cannot cleanly distinguish authenticated users or HTTP methods within the same path). 
+The forum's rate limiting uses a two-tier approach. At the nginx layer, the `forum` zone (defined above) acts as a coarse, IP-level first line of defense. Finer-grained, per-user limits are enforced by the backend itself via the `RateLimiterService` (because nginx cannot cleanly distinguish authenticated users or HTTP methods within the same path).
 
 The backend-enforced limits for forum endpoints are:
 - `createPost`: 5 / 10 minutes
