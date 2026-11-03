@@ -45,6 +45,17 @@ automatically, since it reuses the same variable.
 **Test:** confirmed that failed attempts against one account no longer
 affect login for other accounts.
 
+> **Update (3 Nov 2026):** in the current code the login field is `username`
+> (`LoginDto`), and since the final-version PR it also accepts the email. A key
+> built from the typed text (the snippet above) then gave one account two
+> independent counters, one per spelling, so the lockout could be bypassed by
+> alternating the username and the email. The key is now built from the account:
+> `login_attempts:user:${user.id}` when the account exists, and
+> `login_attempts:unknown:<sha256 of the lowercased text>` when it does not. The
+> snippet above shows the key as it was when this report was written. See
+> `RATE_LIMITING.md` ("Per-account key") and `RATE_LIMIT_TESTING.md` (Tests 14
+> and 15).
+
 ---
 
 ## 2. Hardcoded `JWT_SECRET` fallback
@@ -229,7 +240,7 @@ $backend_upstream;`) to force periodic DNS re-resolution.
 
 | File | Change |
 |---|---|
-| `backend/src/auth/auth.service.ts` | Per-account login rate limit |
+| `backend/src/auth/auth.service.ts` | Per-account login rate limit (key built from the account id since 3 Nov 2026, see §1) |
 | `backend/src/auth/auth.module.ts` | Removed JWT fallback + `registerAsync` |
 | `backend/src/auth/jwt.strategy.ts` | Removed JWT fallback + fail-fast |
 | `backend/src/vault/vault-bootstrap.ts` | Reads `secret/jwt` |

@@ -162,7 +162,7 @@ Implemented in two complementary layers on `/auth/login` (full detail in
   IPs, one attempt each against the same account).
 - **By account (backend + Redis)** — a custom, reusable `RateLimiterService`
   in NestJS, using Redis `INCR`+`EXPIRE` for atomic, self-expiring counters.
-  5 failed attempts / 30-minute window, reset on successful login.
+  5 failed attempts / 30-minute window per account, reset on successful login.
 
 **A real bug was found and fixed after the original report:** the per-account
 limiter used a single fixed Redis key (`login_attempts:`) for *every* user,
@@ -170,6 +170,20 @@ meaning five failed logins by any one person would lock out login attempts for
 everyone. Fixed by keying on the submitted username
 (`login_attempts:${dto.username}`), tested and confirmed — each account now
 has its own independent counter.
+
+**A second bug appeared when login by email was added (3 Nov 2026):** the login
+field accepts the username or the email of the same account, so a key built from
+the typed text gave one account two independent counters. An attacker got up to
+10 attempts instead of 5, and an account locked through the username could still
+be logged into through the email with the correct password (confirmed by the
+`S1` test of `scripts/test-security.sh`, `200 (bypass total)`, and in Redis, with
+the keys `login_attempts:<username>` and `login_attempts:<email>` for one
+account). Fixed by building the key from the account: `login_attempts:user:${user.id}`
+when the account exists, and `login_attempts:unknown:<sha256 of the lowercased text>`
+when it does not, so unknown identifiers are still counted without storing the
+typed text, which may be an email, in Redis in clear. Re-tested: the `S1` test
+passes, `test-users.sh` passes (19/19), and Redis shows one key per account. See
+`RATE_LIMITING.md` ("Per-account key") and `RATE_LIMIT_TESTING.md` (Tests 14 and 15).
 
 **Forum rate limiting, previously blocked, is now implemented.** The gap noted
 in the original report (`createPost`/`createComment`/`createReport` had no
