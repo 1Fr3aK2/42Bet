@@ -4,10 +4,10 @@ Documentation for the nginx configuration (reverse proxy + WAF) of the
 transcendence project.
 
 > **Note on this revision:** this document has been updated to match the
-> current `default.conf.template`. The rate limiting, security headers, nginx
-> version hiding (`server_tokens off`), the public health check (aggregated
-> state only), and per-module routing sections below reflect the live
-> configuration.
+> current `default.conf.template`. The rate limiting, security headers (including
+> `Content-Security-Policy`), nginx version hiding (`server_tokens off`), the
+> public health check (aggregated state only), and per-module routing sections
+> below reflect the live configuration.
 
 ## General structure
 
@@ -68,18 +68,20 @@ modsecurity on;
 add_header X-Content-Type-Options "nosniff" always;
 add_header X-Frame-Options "DENY" always;
 add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' ws: wss:; frame-ancestors 'none';" always;
 ```
 
 - **`Strict-Transport-Security` (HSTS)** — instructs the browser to never try HTTP with this domain again after the first HTTPS visit, closing the man-in-the-middle attack window that would otherwise exist with only the 301 redirect (which still protects the first connection, but depends on that initial HTTP request not being intercepted before it reaches the server).
 - **`X-Content-Type-Options: nosniff`** — prevents the browser from reinterpreting a file's type based on content instead of trusting the declared `Content-Type` (relevant mitigation on the forum endpoints, where users publish content).
 - **`X-Frame-Options: DENY`** — prevents the site from being loaded inside an `<iframe>` on another domain (clickjacking protection). Chose `DENY` over `SAMEORIGIN` because the frontend doesn't use iframes of its own domain.
 - **`Referrer-Policy: strict-origin-when-cross-origin`** — prevents a page's full path (potentially carrying sensitive information in a query string) from being sent in the `Referer` header to external sites; for internal navigation and HTTPS→HTTPS across domains, it still keeps enough for analytics.
+- **`Content-Security-Policy` (CSP)** — restricts the sources from which resources (scripts, styles, images, connections) can be loaded, preventing unauthorized content injection and restricting embedding (`frame-ancestors 'none'`). Note: `'unsafe-inline'` and `'unsafe-eval'` are permitted for scripts/styles and `ws:`/`wss:` for connections to support Vite dev server HMR (`@vite/client`, `@react-refresh`) and real-time WebSockets until a static production build is deployed.
 
 **Tested with:**
 ```bash
 curl -k -I https://localhost/
 ```
-Confirmed: all 4 headers present in the response with the expected values.
+Confirmed: all 5 headers present in the response with the expected values.
 
 ## DNS resolution
 

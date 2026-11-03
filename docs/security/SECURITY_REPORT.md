@@ -220,7 +220,8 @@ Full reference in `NGINX_CONFIG.md`. Highlights:
   this phase — `/health` and `/status` (see Section 7).
 - **Security headers**, applied to all HTTPS responses: `Strict-Transport-Security`,
   `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`,
-  `Referrer-Policy: strict-origin-when-cross-origin`. Verified via `curl -I`.
+  `Referrer-Policy: strict-origin-when-cross-origin`,
+  `Content-Security-Policy`. Verified via `curl -I`.
 - **WebSocket support** (`/socket.io/`, added by the frontend teammate for
   real-time crypto price data) required a scoped ModSecurity exclusion
   (`SecRuleRemoveById 920420`) rather than disabling the WAF for that location
