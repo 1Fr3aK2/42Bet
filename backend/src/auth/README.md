@@ -65,7 +65,10 @@ Save User in PostgreSQL
 Login
       |
       v
-Find User by Email
+Find User by Username (or by Email)
+      |
+      v
+Check the failed-login counter of the account (Redis)
       |
       v
 Compare Password Hash
@@ -193,11 +196,30 @@ Response:
 
 The token must be used to access protected routes.
 
-> **Confirms the field used by the per-account rate limiter**: the Redis
-> key built in `AuthService.login()` for brute-force protection is keyed on
-> this `username` field (`login_attempts:${dto.username}`) — see
-> `RATE_LIMITING.md` / `AUTH_HARDENING_REPORT.md` for the full rate limiting
-> design built on top of this endpoint.
+## Brute-force protection (per-account rate limiter)
+
+Failed logins are counted in Redis, at most 5 per account in 30 minutes. The
+counter belongs to the **account**, not to the text typed in the `username`
+field: `AuthService.login()` looks the user up first and only then builds the
+Redis key.
+
+| Situation | Redis key |
+|-----------|-----------|
+| The account exists | `login_attempts:user:${user.id}` |
+| No account matches | `login_attempts:unknown:<sha256 of the lowercased text>` |
+
+- Logging in with the username or with the email of the same account uses the
+  **same key**, so both share one counter. Alternating between the two does not
+  give extra attempts, and a locked account stays locked for both.
+- For an identifier that matches no account, the attempts are still counted
+  (otherwise unknown names could be tried without limit), but the typed text,
+  which may be an email, is never stored in Redis in clear: only its SHA-256
+  hash is part of the key, so the key also has a fixed length.
+- A successful login resets the counter of that account (`resetLimit(key)` with
+  the same key used by `checkLimit`).
+
+See `RATE_LIMITING.md` / `AUTH_HARDENING_REPORT.md` for the full rate limiting
+design built on top of this endpoint.
 
 ---
 
