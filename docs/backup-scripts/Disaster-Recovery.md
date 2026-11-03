@@ -127,13 +127,27 @@ migrations.)
 
 ### 2.7 Verify
 
+Confirm that the core stack is healthy:
+
 ```bash
 curl -sk https://localhost/health
 ```
 
-Confirm `"database": "up"` in the response, then spot-check the restored data
-through the application itself (log in, check that expected records are
-present).
+Confirm `"status": "up"` and `"core": "up"` under `components` in the response
+(the public health check groups PostgreSQL, Redis, and Vault into `core` to avoid
+exposing internal stack topology).
+
+Alternatively, to inspect the exact per-service status directly via the backend's
+internal health check (accessible only within the Docker network):
+
+```bash
+docker compose exec backend wget -qO- http://localhost:8000/health
+```
+
+Confirm `"database": "up"` in the output.
+
+Finally, spot-check the restored data through the application itself (log in,
+check that expected records are present).
 
 ---
 

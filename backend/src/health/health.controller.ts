@@ -43,10 +43,8 @@ export class HealthController {
 			status: allUp ? 'up' : anyUp ? 'degraded' : 'down',
 			timestamp: new Date().toISOString(),
 			components: {
-				database: database ? 'up' : 'down',
-				redis: redis ? 'up' : 'down',
-				vault: vault ? 'up' : 'down',
-				elasticsearch: elasticsearch ? 'up' : 'down',
+				core: database && redis && vault ? 'up' : 'down',
+				monitoring: elasticsearch ? 'up' : 'down',
 			},
 		};
 	}
