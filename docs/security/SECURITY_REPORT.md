@@ -216,7 +216,8 @@ Full reference in `NGINX_CONFIG.md`. Highlights:
 - **Per-module routing** — dedicated `location` blocks matching the backend's
   actual route prefixes: `/auth/login`, `/forum`, `/api/admin` (Admin Public
   API), `/users`, `/crypto`, `/ws` and `/socket.io/`, plus infrastructure UIs
-  behind subpaths: `/grafana/`, `/prometheus/`, `/kibana/`, and — added in
+  behind subpaths: `/grafana/`, `/kibana/` (with unauthenticated `/prometheus/`
+  hardened to return 404 and accessible only internally by Grafana), and — added in
   this phase — `/health` and `/status` (see Section 7).
 - **Security headers**, applied to all HTTPS responses: `Strict-Transport-Security`,
   `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`,

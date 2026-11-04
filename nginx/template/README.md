@@ -90,7 +90,6 @@ resolver 127.0.0.11 valid=10s;
 set $upstream_frontend http://frontend:5173;
 set $upstream_backend http://backend:8000;
 set $upstream_grafana http://grafana:3000;
-set $upstream_prometheus http://prometheus:9090;
 set $upstream_kibana http://kibana:5601;
 ```
 
@@ -229,9 +228,7 @@ location /grafana/ {
 }
 
 location /prometheus/ {
-    proxy_pass $upstream_prometheus;
-    proxy_set_header Host $host;
-    proxy_set_header X-Real-IP $remote_addr;
+    return 404;
 }
 
 location /kibana/ {
@@ -249,7 +246,7 @@ location /kibana/ {
 }
 ```
 
-No dedicated rate limit — these aren't endpoints exposed to end users of the application (internal/admin use), each already gated by its own authentication (Grafana login, Kibana behind `xpack.security`, Prometheus not authenticated but not carrying sensitive data beyond metrics).
+No dedicated rate limit — these aren't endpoints exposed to end users of the application (internal/admin use), each already gated by its own authentication (Grafana login, Kibana behind `xpack.security`). Prometheus is not exposed publicly without authentication (returns 404), as Grafana queries it internally via the Docker network.
 
 **`/kibana/` ModSecurity exclusions — rationale:**
 

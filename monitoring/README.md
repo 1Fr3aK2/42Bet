@@ -20,9 +20,10 @@ provisioned Grafana dashboard, with alerting rules evaluated by Prometheus.
 
 ## Architecture decisions
 
-- **Internal-only access**: Prometheus and Grafana are not exposed on host ports.
-  They are reached exclusively through the Nginx reverse proxy, under `/prometheus/`
-  and `/grafana/` respectively.
+- **Internal-only access**: Prometheus is not exposed on host ports and is not
+  accessible via public Nginx reverse proxy (returns 404). Grafana reaches Prometheus
+  exclusively over the internal Docker network (`http://prometheus:9090/prometheus/`).
+  Grafana itself is reached through Nginx under `/grafana/` and requires authentication.
 - **Route prefixes**: Prometheus runs with `--web.route-prefix=/prometheus/` and
   `--web.external-url=https://localhost/prometheus/`; Grafana runs with
   `GF_SERVER_SERVE_FROM_SUB_PATH=true` and a matching `GF_SERVER_ROOT_URL`. This
@@ -184,7 +185,7 @@ the config was correct:
 ## How to test
 
 1. `docker compose up -d` and confirm `grafana` and `prometheus` are healthy.
-2. `https://localhost/prometheus/targets` — all 5 jobs should show `UP`.
+2. Confirm Prometheus is not publicly exposed: `curl -sk -o /dev/null -w "%{http_code}" https://localhost/prometheus/` returns `404`.
 3. `https://localhost/grafana/` → Connections → Data sources — "Prometheus"
    should already be listed (proves `datasource.yml` was read).
 4. Dashboards → folder "Infra" → "Infra Status" should appear automatically
