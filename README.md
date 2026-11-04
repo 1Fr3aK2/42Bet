@@ -501,8 +501,6 @@ moderation AI (our moderation is rule-based, not AI).
 - After a reboot, run `make down` and then `make`, so that Vault is unsealed
   before the backend starts.
 
-<!-- TODO(team): update this list before the evaluation (frontend production build). -->
-
 ## Credits
 
 - Candlestick chart: **TradingView Lightweight Charts™**, Copyright (c) 2025

@@ -261,23 +261,18 @@ What keeps this safe:
   shell, Prisma sends them to PostgreSQL as query parameters, and React
   escapes them on display.
 
-## `exclusions.conf` — Vite dev server false positive
-
-```apache
-SecRuleRemoveById 930121
-```
+## `exclusions.conf` — Former Vite dev server false positive (Resolved)
 
 Rule `930121` (Local File Inclusion detection) flags any request whose
 `Referer` header contains the string `node_modules/` — a legitimate
-heuristic against LFI attempts, but it also matches the Vite dev server's
-own asset requests (`/node_modules/.vite/deps/...`), which are normal in
+heuristic against LFI attempts, but it also matched the Vite dev server's
+own asset requests (`/node_modules/.vite/deps/...`), which were normal in
 development.
 
-**This is a dev-mode-specific exclusion.** The frontend currently runs via
-the Vite dev server, not a production build. If/when the frontend is served
-as a static production build, `node_modules/`-referencing requests should no
-longer occur, and this exclusion may no longer be necessary — worth
-revisiting at that point rather than assuming it should stay indefinitely.
+**Status: Resolved in production.** With the frontend migrated to a static
+multi-stage production build (PR #75), asset requests are compiled into `/assets/`
+with content hashes and no longer reference `node_modules/`. The exclusion was
+therefore removed from `exclusions.conf` and rule `930121` is now fully active.
 
 ## Verification
 
@@ -363,8 +358,8 @@ to end, not assumed:
 
 - [x] `PARANOIA`/`BLOCKING_PARANOIA` raised from default (1) to 2
 - [x] Method enforcement extended for PATCH/PUT/DELETE (REST API requirement)
-- [x] Vite dev-server false positive excluded, with a note to revisit for
-      production builds
+- [x] Frontend migrated to static production build (PR #75); Vite dev-server
+      exclusion 930121 removed and rule re-enabled
 - [x] Verified against real app traffic (forum flows) with no unresolved
       false positives
 - [x] Verified against simulated SQLi/XSS attacks — both blocked
