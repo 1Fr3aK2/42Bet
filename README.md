@@ -120,7 +120,6 @@ sealed, and this unseals it before the backend starts.
 |---------|------|
 | https://localhost/grafana/ | Grafana dashboards (Grafana login from `.env`) |
 | https://localhost/kibana/ | Kibana logs (user `elastic`, `ELASTIC_PASSWORD`) |
-| https://localhost/prometheus/ | Prometheus |
 | https://localhost/status | status page |
 | https://localhost/health | backend health check (JSON) |
 | https://localhost/api/admin/docs | Swagger documentation of the public admin API |
@@ -493,8 +492,9 @@ moderation AI (our moderation is rule-based, not AI).
   cannot settle it within 10 seconds of its end (for example during a
   restart), the stake is refunded.
 - The application is tested on the latest stable Google Chrome only.
-- Prometheus is reachable through nginx without a login (read-only); Grafana
-  and Kibana require one.
+- Prometheus is not published publicly through nginx (returns 404); Grafana
+  proxies all PromQL queries server-side over the internal Docker network and
+  requires a login. Kibana also requires authentication.
 - Filebeat reads the logs of every Docker container on the host, not only this
   project's.
 - The certificates are self-signed, so the browser shows a warning the first time.
