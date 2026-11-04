@@ -4,8 +4,7 @@ export default function Navbar({ balance, onRegisterClick, onLoginClick, onSetti
   return (
     <nav className="navbar">
       <div className="logo">
-        <span className="logo-text">Transcendence</span>
-        <span className="logo-tag">Beta</span>
+        <span className="logo-text">42Bet</span>
       </div>
 
       <div className="nav-actions">
