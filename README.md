@@ -1,4 +1,4 @@
-*This project has been created as part of the 42 curriculum by mcarepa-, &lt;hugo-login&gt;, &lt;pedro-login&gt;, &lt;rafael-login&gt;, &lt;duarte-login&gt;.*
+*This project has been created as part of the 42 curriculum by mcarepa-, &lt;hugo-login&gt;, &lt;pedro-login&gt;, raamorim, &lt;duarte-login&gt;.*
 
 <!-- TODO(team): replace the four placeholders above with the 42 logins. -->
 
