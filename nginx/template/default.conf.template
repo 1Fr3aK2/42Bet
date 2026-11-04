@@ -146,7 +146,7 @@
         # queries server-side via /grafana/api/ds/query (which requires a
         # Grafana session). Direct access would expose metric names, internal
         # container topology and scrape config with no authentication.
-        location /prometheus/ {
+        location /prometheus {
             return 404;
         }
 

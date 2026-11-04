@@ -227,7 +227,7 @@ location /grafana/ {
     proxy_set_header X-Real-IP $remote_addr;
 }
 
-location /prometheus/ {
+location /prometheus {
     return 404;
 }
 
