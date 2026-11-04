@@ -29,12 +29,6 @@ body {
   position: relative;
 }
 
-/* "TRANSCENDENCE Beta" top-left wordmark */
-.logo {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-}
 
 .logo-text {
   font-size: 20px;
@@ -45,18 +39,6 @@ body {
   user-select: none;
 }
 
-/* Orange "Beta" pill next to the logo */
-.logo-tag {
-  font-size: 10px;
-  letter-spacing: 0.15em;
-  color: #e8a020;
-  text-transform: uppercase;
-  border: 1px solid #e8a020;
-  padding: 2px 6px;
-  border-radius: 3px;
-  position: relative;
-  top: -2px;
-}
 
 /* Wrapper for everything on the right side of the navbar */
 .nav-actions {

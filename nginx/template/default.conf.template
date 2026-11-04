@@ -44,7 +44,7 @@
         add_header Referrer-Policy "strict-origin-when-cross-origin" always;
 
         resolver 127.0.0.11 valid=10s;
-        set $upstream_frontend http://frontend:5173;
+        set $upstream_frontend http://frontend:80;
         set $upstream_backend http://backend:8000;
         set $upstream_grafana http://grafana:3000;
         set $upstream_prometheus http://prometheus:9090;
