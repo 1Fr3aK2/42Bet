@@ -168,8 +168,8 @@ export class BetsService implements OnModuleInit, OnModuleDestroy {
     this.events.emit('bets.changed', { userId: bet.userId });
 
     this.logger.log(
-      `Bet ${bet.id} ${status}: ${bet.coin} ${bet.direction} ${bet.amount} T$, ` +
-        `${bet.entryPrice} -> ${exitPrice ?? 'n/a'}, payout ${payout} T$`,
+      `Bet ${bet.id} ${status}: ${bet.coin} ${bet.direction} ${bet.amount} T€, ` +
+        `${bet.entryPrice} -> ${exitPrice ?? 'n/a'}, payout ${payout} T€`,
     );
   }
 }

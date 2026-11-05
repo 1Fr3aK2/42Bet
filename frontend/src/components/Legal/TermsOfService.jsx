@@ -30,10 +30,10 @@ export default function TermsOfService() {
       <h2>4. Virtual currency and bets</h2>
       <ul>
         <li>
-          T$ is a play currency with no monetary value. It cannot be bought, sold, exchanged,
+          T€ is a play currency with no monetary value. It cannot be bought, sold, exchanged,
           transferred or withdrawn, and nothing of real value can be won or lost.
         </li>
-        <li>New accounts start with 1,000 T$.</li>
+        <li>New accounts start with 1,000 T€.</li>
         <li>
           A bet predicts whether the price of BTC or ETH, in euros, will be higher (up) or lower
           (down) 60 seconds after the bet is placed. The stake is taken from your balance when

@@ -119,9 +119,9 @@ export default function App() {
   function showResults(bets) {
     if (bets.length === 1) {
       const [bet] = bets;
-      if (bet.status === 'won') showToast(`✓ WIN ${bet.coin} +T$ ${bet.payout}`, 'win');
-      else if (bet.status === 'lost') showToast(`✗ LOSS ${bet.coin} -T$ ${bet.amount}`, 'loss');
-      else showToast(`↺ REFUND ${bet.coin} T$ ${bet.amount}`, 'info');
+      if (bet.status === 'won') showToast(`✓ WIN ${bet.coin} +T€ ${bet.payout}`, 'win');
+      else if (bet.status === 'lost') showToast(`✗ LOSS ${bet.coin} -T€ ${bet.amount}`, 'loss');
+      else showToast(`↺ REFUND ${bet.coin} T€ ${bet.amount}`, 'info');
     } else {
       const count = (status) => bets.filter((bet) => bet.status === status).length;
       showToast(`${bets.length} bets settled: ${count('won')} won, ${count('lost')} lost`, count('won') ? 'win' : 'loss');

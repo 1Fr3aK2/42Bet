@@ -25,7 +25,7 @@ export default function BetSection({ betAmount, onAmountChange, balance, onBet, 
         </div>
 
         <div className="bet-input-wrapper">
-          <span className="bet-currency">T$</span>
+          <span className="bet-currency">T€</span>
           {/* Whole positive amounts only: a change with anything but digits
               (letters, "-", "." or "e") is ignored. */}
           <input
@@ -47,7 +47,7 @@ export default function BetSection({ betAmount, onAmountChange, balance, onBet, 
 
       <div className="payout-info">
         Payout: <span className="payout-multiplier">x{PAYOUT}</span>
-        &nbsp;·&nbsp; Win: <span className="payout-win">T$ {win.toLocaleString()}</span>
+        &nbsp;·&nbsp; Win: <span className="payout-win">T€ {win.toLocaleString()}</span>
       </div>
 
       <div className="bet-buttons">

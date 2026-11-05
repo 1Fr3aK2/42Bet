@@ -40,7 +40,7 @@ export default function Navbar({ balance, onRegisterClick, onLoginClick, onSetti
             <div className="nav-balance">
               <span className="nav-balance-label">Balance</span>
               <span className="nav-balance-value">
-                {balance.toLocaleString('en-US', { minimumFractionDigits: 0 })} T$
+                {balance.toLocaleString('en-US', { minimumFractionDigits: 0 })} T€
               </span>
             </div>
 
