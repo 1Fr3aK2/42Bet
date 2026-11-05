@@ -42,7 +42,7 @@ volumes:
 | `900200`  | Allowed HTTP methods (REST)                          |
 | `1000001` | Base64 avatar exclusion (`PATCH /users/me`)          |
 | `1000002` | PromQL exclusion for Grafana (`POST /grafana/api/ds/query`) |
-| `1000003` | PromQL exclusion for Prometheus (`/prometheus/api/v1/`) |
+| `1000003` | *(Removed)* Former PromQL exclusion for `/prometheus/api/v1/` (endpoint now returns 404) |
 | `1000004` | Forum text fields exclusion (`/forum/`)              |
 
 ## `before-crs.conf` — allowing REST methods
@@ -165,14 +165,8 @@ SecRule REQUEST_METHOD "@streq POST" \
     ctl:ruleRemoveTargetByTag=attack-rce;ARGS:json.queries.array_0.expr,\
     ctl:ruleRemoveTargetById=941380;ARGS:json.queries.array_0.legendFormat"
 
-SecRule REQUEST_URI "@beginsWith /prometheus/api/v1/" \
-  "id:1000003,\
-  phase:1,\
-  nolog,\
-  pass,\
-  t:none,\
-  ctl:ruleRemoveTargetByTag=attack-sqli;ARGS:query,\
-  ctl:ruleRemoveTargetByTag=attack-rce;ARGS:query"
+# Rule 1000003 was removed: /prometheus/ is no longer publicly proxied (returns 404).
+# Grafana proxies all PromQL queries server-side via /grafana/api/ds/query (rule 1000002).
 ```
 
 PromQL is a query language, not SQL or shell, but its operators and brackets
@@ -196,7 +190,8 @@ SQL-injection and command-injection groups (tags `attack-sqli` and
 |------|----------------------------------|-----------------------------------------|----------------------------|
 | `1000002` | `POST /grafana/api/ds/query` | `ARGS:json.queries.array_0.expr`        | `attack-sqli`, `attack-rce` |
 | `1000002` | `POST /grafana/api/ds/query` | `ARGS:json.queries.array_0.legendFormat`| rule `941380` only          |
-| `1000003` | `/prometheus/api/v1/*`       | `ARGS:query`                            | `attack-sqli`, `attack-rce` |
+
+*(Note: Rule `1000003` previously excluded `attack-sqli` and `attack-rce` on `/prometheus/api/v1/`. It was removed because `/prometheus/` is no longer publicly proxied by nginx and returns 404. Prometheus queries now only traverse the WAF through the authenticated Grafana proxy endpoint).*
 
 What keeps this safe:
 
@@ -207,7 +202,7 @@ What keeps this safe:
   `attack-sqli` and `attack-rce` are removed from them (and `941380` from
   `legendFormat`).
 - **Grafana's endpoint requires a login**, so it is not reachable by an
-  anonymous attacker. The Prometheus endpoint is read-only (query API).
+  anonymous attacker. Direct Prometheus access from the outside is disabled (404).
 
 Things worth knowing if this is touched again:
 
@@ -218,9 +213,6 @@ Things worth knowing if this is touched again:
   could be blocked again — extend the targets if that happens.
 - The `json.` prefix matters here for the same reason as in the avatar
   exclusion (see above).
-- Rule `1000003` has no method condition, so it applies to any method on
-  `/prometheus/api/v1/`; this is intentional, since the Prometheus query API
-  accepts both `GET` and `POST`.
 
 ## `before-crs.conf` — ordinary sentences in the forum
 
@@ -269,23 +261,18 @@ What keeps this safe:
   shell, Prisma sends them to PostgreSQL as query parameters, and React
   escapes them on display.
 
-## `exclusions.conf` — Vite dev server false positive
-
-```apache
-SecRuleRemoveById 930121
-```
+## `exclusions.conf` — Former Vite dev server false positive (Resolved)
 
 Rule `930121` (Local File Inclusion detection) flags any request whose
 `Referer` header contains the string `node_modules/` — a legitimate
-heuristic against LFI attempts, but it also matches the Vite dev server's
-own asset requests (`/node_modules/.vite/deps/...`), which are normal in
+heuristic against LFI attempts, but it also matched the Vite dev server's
+own asset requests (`/node_modules/.vite/deps/...`), which were normal in
 development.
 
-**This is a dev-mode-specific exclusion.** The frontend currently runs via
-the Vite dev server, not a production build. If/when the frontend is served
-as a static production build, `node_modules/`-referencing requests should no
-longer occur, and this exclusion may no longer be necessary — worth
-revisiting at that point rather than assuming it should stay indefinitely.
+**Status: Resolved in production.** With the frontend migrated to a static
+multi-stage production build (PR #75), asset requests are compiled into `/assets/`
+with content hashes and no longer reference `node_modules/`. The exclusion was
+therefore removed from `exclusions.conf` and rule `930121` is now fully active.
 
 ## Verification
 
@@ -358,20 +345,11 @@ to end, not assumed:
 6. If touching the PromQL exclusions, confirm both sides again — the
    legitimate query must pass, and the same kind of payload outside the
    excluded field (or XSS inside it) must still be blocked:
-   ```bash
-   # must NOT be 403 — legitimate PromQL on the Prometheus API
-   curl -k -G https://localhost/prometheus/api/v1/query \
-     --data-urlencode 'query=sum(rate(http_requests_total[1m])) by (route)'
-
-   # must still be 403 — XSS inside the excluded field is still inspected
-   curl -k -G https://localhost/prometheus/api/v1/query \
-     --data-urlencode 'query=<script>alert(1)</script>'
-
-   # must still be 403 — SQLi in a field that is NOT excluded
-   curl -k -G https://localhost/prometheus/api/v1/query \
-     --data-urlencode "other=' OR 1=1 --"
-   ```
-   Then open the Grafana dashboards and confirm all 12 panels load data.
+   Note: Direct queries against `https://localhost/prometheus/` now return `404`
+   because unauthenticated public access has been removed at the nginx level.
+   All PromQL queries are proxied server-side through Grafana (`/grafana/api/ds/query`)
+   which requires a valid Grafana session.
+   Then open the Grafana dashboards and confirm all panels load data.
 7. If touching the forum exclusion, run `bash scripts/test-forum.sh`:
    ordinary sentences must pass in posts, comments and the search box, while
    `<script>`, `onerror=` and SQL injection in `page` must still return `403`.
@@ -380,8 +358,8 @@ to end, not assumed:
 
 - [x] `PARANOIA`/`BLOCKING_PARANOIA` raised from default (1) to 2
 - [x] Method enforcement extended for PATCH/PUT/DELETE (REST API requirement)
-- [x] Vite dev-server false positive excluded, with a note to revisit for
-      production builds
+- [x] Frontend migrated to static production build (PR #75); Vite dev-server
+      exclusion 930121 removed and rule re-enabled
 - [x] Verified against real app traffic (forum flows) with no unresolved
       false positives
 - [x] Verified against simulated SQLi/XSS attacks — both blocked
@@ -389,12 +367,10 @@ to end, not assumed:
       pentest pass confirmed the original `ctl:ruleRemoveById` version was
       exploitable via other fields on the same endpoint (`username`,
       `email`)
-- [x] PromQL exclusions added for Grafana (`/grafana/api/ds/query`) and
-      Prometheus (`/prometheus/api/v1/`), scoped by tag to the query fields
-      only
-- [ ] Confirm the negative cases for the PromQL exclusions (XSS in `query`
-      still `403`, other fields still inspected) and that all 12 Grafana
-      panels load
+- [x] PromQL exclusions scoped by tag to the query fields only in Grafana
+      (`/grafana/api/ds/query`); public `/prometheus/` endpoint removed (returns 404)
+      and unauthenticated access closed
+- [x] Confirmed all Grafana panels load data via authenticated server-side proxy
 - [x] Avatar field validated by the backend (PNG, JPEG, GIF or WebP data
       URL, at most 100 000 characters: `backend/src/users/user-rules.ts`)
 - [x] Avatar exclusion extended (v3) to the `attack-sqli`, `attack-xss` and

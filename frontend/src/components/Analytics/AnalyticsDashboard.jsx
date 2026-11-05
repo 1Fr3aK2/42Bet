@@ -246,16 +246,16 @@ function Dashboard({ data }) {
   return (
     <>
       <div className="analytics-kpis">
-        <Kpi label="Balance" value={`${fmt(summary.balance)} T$`} />
-        <Kpi label="Profit" value={`${signed(summary.profit)} T$`} valueTone={tone(summary.profit)}
-          detail={`${fmt(summary.paidOut)} T$ paid out`} />
+        <Kpi label="Balance" value={`${fmt(summary.balance)} T€`} />
+        <Kpi label="Profit" value={`${signed(summary.profit)} T€`} valueTone={tone(summary.profit)}
+          detail={`${fmt(summary.paidOut)} T€ paid out`} />
         <Kpi label="Win rate" value={percent(summary.winRate)}
           detail={`${summary.won} won · ${summary.lost} lost · ${summary.refunded} refunded`} />
         <Kpi label="Bets" value={fmt(summary.bets)} detail={`${summary.active} still running`} />
-        <Kpi label="Wagered" value={`${fmt(summary.wagered)} T$`} />
-        <Kpi label="Best bet" value={summary.bestBet === null ? '—' : `${signed(summary.bestBet)} T$`}
+        <Kpi label="Wagered" value={`${fmt(summary.wagered)} T€`} />
+        <Kpi label="Best bet" value={summary.bestBet === null ? '—' : `${signed(summary.bestBet)} T€`}
           valueTone={tone(summary.bestBet)}
-          detail={summary.worstBet === null ? undefined : `worst: ${signed(summary.worstBet)} T$`} />
+          detail={summary.worstBet === null ? undefined : `worst: ${signed(summary.worstBet)} T€`} />
       </div>
 
       {summary.bets === 0 ? (
@@ -264,7 +264,7 @@ function Dashboard({ data }) {
         <>
           <div className="analytics-charts">
             <figure className="analytics-card wide">
-              <figcaption className="analytics-card-title">Cumulative profit after each settled bet (T$)</figcaption>
+              <figcaption className="analytics-card-title">Cumulative profit after each settled bet (T€)</figcaption>
               {profitLine.length ? (
                 <ResponsiveContainer width="100%" height={240}>
                   <LineChart data={profitLine} margin={{ top: 8, right: 16 }}>
@@ -275,7 +275,7 @@ function Dashboard({ data }) {
                     <ReferenceLine y={0} stroke={MUTED} strokeDasharray="4 4" />
                     <Tooltip contentStyle={TOOLTIP_STYLE}
                       labelFormatter={(n, items) => (n === 0 ? 'Start' : `Bet #${n} · ${dateTime(items?.[0]?.payload.time)}`)}
-                      formatter={(v) => [`${signed(v)} T$`, 'Profit']} />
+                      formatter={(v) => [`${signed(v)} T€`, 'Profit']} />
                     <Line type="linear" dataKey="profit" stroke={ORANGE} strokeWidth={2}
                       dot={profitLine.length <= 60 ? { r: 3, fill: ORANGE } : false} isAnimationActive={false} />
                   </LineChart>
@@ -286,7 +286,7 @@ function Dashboard({ data }) {
             </figure>
 
             <figure className="analytics-card">
-              <figcaption className="analytics-card-title">Profit by day (T$)</figcaption>
+              <figcaption className="analytics-card-title">Profit by day (€)</figcaption>
               <ResponsiveContainer width="100%" height={220}>
                 <BarChart data={data.profitByDay}>
                   <CartesianGrid stroke={GRID} vertical={false} />
@@ -294,7 +294,7 @@ function Dashboard({ data }) {
                   <YAxis stroke={MUTED} fontSize={11} width={60} tickFormatter={fmt} />
                   <ReferenceLine y={0} stroke={MUTED} />
                   <Tooltip contentStyle={TOOLTIP_STYLE} labelFormatter={shortDay} cursor={{ fill: '#1a1d26' }}
-                    formatter={(v) => [`${signed(v)} T$`, 'Profit']} />
+                    formatter={(v) => [`${signed(v)} T€`, 'Profit']} />
                   <Bar dataKey="profit" isAnimationActive={false}>
                     {data.profitByDay.map((d) => <Cell key={d.day} fill={d.profit < 0 ? RED : GREEN} />)}
                   </Bar>
@@ -307,7 +307,7 @@ function Dashboard({ data }) {
                   <tbody>
                     {data.profitByDay.map((d) => (
                       <tr key={d.day}><td>{d.day}</td><td className="num">{d.bets}</td>
-                        <td className={`num ${tone(d.profit)}`}>{signed(d.profit)} T$</td></tr>
+                        <td className={`num ${tone(d.profit)}`}>{signed(d.profit)} T€</td></tr>
                     ))}
                   </tbody>
                 </table>
@@ -364,7 +364,7 @@ function Dashboard({ data }) {
                     {groups.map((g) => (
                       <tr key={g.name}><td>{g.name}</td><td className="num">{g.bets}</td><td className="num">{g.won}</td>
                         <td className="num">{g.lost}</td><td className="num">{percent(g.winRate)}</td>
-                        <td className={`num ${tone(g.profit)}`}>{signed(g.profit)} T$</td></tr>
+                        <td className={`num ${tone(g.profit)}`}>{signed(g.profit)} T€</td></tr>
                     ))}
                   </tbody>
                 </table>
@@ -396,11 +396,11 @@ function LatestBets({ bets, total }) {
                 <td>{dateTime(b.createdAt)}</td>
                 <td>{b.coin}</td>
                 <td className={b.direction === 'up' ? 'up' : 'down'}>{b.direction}</td>
-                <td className="num">{fmt(b.amount)} T$</td>
+                <td className="num">{fmt(b.amount)} T€</td>
                 <td className="num">{price(b.entryPrice)} → {price(b.exitPrice)}</td>
                 <td>{b.status}</td>
                 <td className={`num ${b.status === 'active' ? '' : tone(b.payout - b.amount)}`}>
-                  {b.status === 'active' ? '—' : `${signed(b.payout - b.amount)} T$`}
+                  {b.status === 'active' ? '—' : `${signed(b.payout - b.amount)} T€`}
                 </td>
               </tr>
             ))}

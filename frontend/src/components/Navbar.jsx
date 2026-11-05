@@ -4,8 +4,7 @@ export default function Navbar({ balance, onRegisterClick, onLoginClick, onSetti
   return (
     <nav className="navbar">
       <div className="logo">
-        <span className="logo-text">Transcendence</span>
-        <span className="logo-tag">Beta</span>
+        <span className="logo-text">42Bet</span>
       </div>
 
       <div className="nav-actions">
@@ -41,7 +40,7 @@ export default function Navbar({ balance, onRegisterClick, onLoginClick, onSetti
             <div className="nav-balance">
               <span className="nav-balance-label">Balance</span>
               <span className="nav-balance-value">
-                {balance.toLocaleString('en-US', { minimumFractionDigits: 0 })} T$
+                {balance.toLocaleString('en-US', { minimumFractionDigits: 0 })} T€
               </span>
             </div>
 

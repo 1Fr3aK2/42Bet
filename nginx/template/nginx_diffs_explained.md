@@ -29,7 +29,7 @@ Para provar que o problema existia, seguimos estes passos:
 ```bash
 # 1. Confirmar que o sistema está funcional
 curl -k https://localhost/health
-# ✅ {"status":"up","timestamp":"...","components":{"database":"up","redis":"up",...}}
+# ✅ {"status":"up","timestamp":"...","components":{"core":"up","monitoring":"up"}}
 # 2. Anotar o IP atual do backend
 docker inspect backend --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}'
 # Exemplo: 172.19.0.7

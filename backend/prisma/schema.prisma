@@ -106,11 +106,11 @@ model Bet {
   id         Int       @id @default(autoincrement())
   coin       String                                // BTC | ETH
   direction  String                                // up | down
-  amount     Int                                   // stake in T$, debited when the bet is placed
+  amount     Int                                   // stake in T€, debited when the bet is placed
   entryPrice Float
   exitPrice  Float?
   status     String    @default("active")          // active | won | lost | refunded
-  payout     Int       @default(0)                 // T$ credited when the bet is settled
+  payout     Int       @default(0)                 // T€ credited when the bet is settled
   expiresAt  DateTime
   settledAt  DateTime?
   createdAt  DateTime  @default(now())

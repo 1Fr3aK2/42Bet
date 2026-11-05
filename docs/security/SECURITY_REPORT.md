@@ -162,7 +162,7 @@ Implemented in two complementary layers on `/auth/login` (full detail in
   IPs, one attempt each against the same account).
 - **By account (backend + Redis)** — a custom, reusable `RateLimiterService`
   in NestJS, using Redis `INCR`+`EXPIRE` for atomic, self-expiring counters.
-  5 failed attempts / 30-minute window, reset on successful login.
+  5 failed attempts / 30-minute window per account, reset on successful login.
 
 **A real bug was found and fixed after the original report:** the per-account
 limiter used a single fixed Redis key (`login_attempts:`) for *every* user,
@@ -170,6 +170,20 @@ meaning five failed logins by any one person would lock out login attempts for
 everyone. Fixed by keying on the submitted username
 (`login_attempts:${dto.username}`), tested and confirmed — each account now
 has its own independent counter.
+
+**A second bug appeared when login by email was added (3 Nov 2026):** the login
+field accepts the username or the email of the same account, so a key built from
+the typed text gave one account two independent counters. An attacker got up to
+10 attempts instead of 5, and an account locked through the username could still
+be logged into through the email with the correct password (confirmed by the
+`S1` test of `scripts/test-security.sh`, `200 (bypass total)`, and in Redis, with
+the keys `login_attempts:<username>` and `login_attempts:<email>` for one
+account). Fixed by building the key from the account: `login_attempts:user:${user.id}`
+when the account exists, and `login_attempts:unknown:<sha256 of the lowercased text>`
+when it does not, so unknown identifiers are still counted without storing the
+typed text, which may be an email, in Redis in clear. Re-tested: the `S1` test
+passes, `test-users.sh` passes (19/19), and Redis shows one key per account. See
+`RATE_LIMITING.md` ("Per-account key") and `RATE_LIMIT_TESTING.md` (Tests 14 and 15).
 
 **Forum rate limiting, previously blocked, is now implemented.** The gap noted
 in the original report (`createPost`/`createComment`/`createReport` had no
@@ -202,11 +216,13 @@ Full reference in `NGINX_CONFIG.md`. Highlights:
 - **Per-module routing** — dedicated `location` blocks matching the backend's
   actual route prefixes: `/auth/login`, `/forum`, `/api/admin` (Admin Public
   API), `/users`, `/crypto`, `/ws` and `/socket.io/`, plus infrastructure UIs
-  behind subpaths: `/grafana/`, `/prometheus/`, `/kibana/`, and — added in
+  behind subpaths: `/grafana/`, `/kibana/` (with unauthenticated `/prometheus/`
+  hardened to return 404 and accessible only internally by Grafana), and — added in
   this phase — `/health` and `/status` (see Section 7).
 - **Security headers**, applied to all HTTPS responses: `Strict-Transport-Security`,
   `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`,
-  `Referrer-Policy: strict-origin-when-cross-origin`. Verified via `curl -I`.
+  `Referrer-Policy: strict-origin-when-cross-origin`,
+  `Content-Security-Policy`. Verified via `curl -I`.
 - **WebSocket support** (`/socket.io/`, added by the frontend teammate for
   real-time crypto price data) required a scoped ModSecurity exclusion
   (`SecRuleRemoveById 920420`) rather than disabling the WAF for that location
@@ -308,30 +324,48 @@ now in place:
 - **Aggregated health check** — the backend exposes two endpoints, kept
   deliberately separate: `GET /health` (used by the Docker Compose
   `healthcheck:` for the `backend` service itself — checks database, Redis,
-  and Vault only) and `GET /health/status` (a richer endpoint, always `200`,
-  additionally checking Elasticsearch, meant for external/public consumption).
-  They were kept separate so that Elasticsearch — which can legitimately take
-  longer to become ready, e.g. after a `make re` — never causes the backend's
-  own Docker healthcheck to fail and delay services that depend on
-  `backend: condition: service_healthy`.
+  and Vault only) and `GET /health/status` (always `200`, additionally
+  checking Elasticsearch, meant for external/public consumption and
+  returning only an aggregated state, see "Minimal public information"
+  below). They were kept separate so that Elasticsearch — which can
+  legitimately take longer to become ready, e.g. after a `make re` — never
+  causes the backend's own Docker healthcheck to fail and delay services
+  that depend on `backend: condition: service_healthy`.
 - **Public exposure** — `location /health` in nginx, proxying to
   `/health/status`, with a dedicated rate-limit zone (`10r/s`, burst 20).
+- **Minimal public information (audit finding F-03, low severity)** — the
+  first version of `/health/status` returned the state of each individual
+  service (`database`, `redis`, `vault`, `elasticsearch`) to anyone, without
+  authentication. That told an attacker which services the stack uses and
+  when one of them was down or degraded. No credentials, internal addresses
+  or detailed error messages were exposed, hence the low severity, but the
+  public page does not need that detail. The endpoint still checks all four
+  services, but now returns only the aggregated `status` (`up` / `degraded` /
+  `down`), the `timestamp`, and two generic groups: `core` (database, Redis
+  and Vault, what the application needs to work) and `monitoring`
+  (Elasticsearch, logging, which does not affect users). The per-service
+  detail stays in `GET /health`, which nginx never reaches, because the
+  `/health` location rewrites every request to `/health/status`: it is only
+  reachable inside the Docker network. Check:
+  `curl -sk https://localhost/health` must not show `database`, `redis`,
+  `vault` or `elasticsearch`.
 - **Status page** — a standalone HTML/JS page served directly by nginx at
   `/status` (not bundled into the React frontend), polling `/health` every 10
-  seconds and rendering overall status plus a per-component breakdown. Kept
+  seconds and rendering overall status plus a breakdown by group (`core`,
+  `monitoring`). Kept
   outside the frontend's React bundle deliberately: a status page is only
   useful if it can still report a problem when other parts of the stack
   (including the frontend itself) are degraded or failing to build/serve.
 - **Disaster recovery procedures** — documented in full in
   `docs/DISASTER_RECOVERY.md`: a tested, step-by-step Postgres restore
   procedure (identify backup → stop writers → safety dump of current state →
-  drop/recreate database → restore → restart → verify via `/health`); a
-  recoverability table per Docker volume; and a dedicated explanation of why
-  Vault's unseal key material is *not* recoverable after loss by design
-  (Shamir's Secret Sharing), with the actual mitigation used in this project
-  (`.env` is the real source of truth for secret values, not Vault's internal
-  storage — a full Vault reinitialization reproduces the same secrets
-  automatically from `.env`).
+  drop/recreate database → restore → restart → verify via the internal
+  `/health`); a recoverability table per Docker volume; and a dedicated
+  explanation of why Vault's unseal key material is *not* recoverable after
+  loss by design (Shamir's Secret Sharing), with the actual mitigation used
+  in this project (`.env` is the real source of truth for secret values, not
+  Vault's internal storage — a full Vault reinitialization reproduces the
+  same secrets automatically from `.env`).
 
 ---
 

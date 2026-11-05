@@ -7,7 +7,7 @@ export default function PrivacyPolicy() {
 
       <p>
         Transcendence is a student project of the 42 Lisboa curriculum: a crypto price
-        prediction game played with a virtual currency (T$), with a community forum. This
+        prediction game played with a virtual currency (T€), with a community forum. This
         policy explains which personal data the application collects, why, who can see it,
         how long it is kept and which rights you have under the EU General Data Protection
         Regulation (GDPR).

@@ -2,7 +2,7 @@
 
 ## What it does
 
-Server-side betting engine. The balance (T$) and the bets are stored in the
+Server-side betting engine. The balance (T€) and the bets are stored in the
 database, so they survive a page refresh, cannot be changed from the browser
 and stay consistent when many users bet at the same time.
 
@@ -14,7 +14,7 @@ compares it with the live price when the 60 seconds are over.
 
 | Rule | Value | Defined in |
 |------|-------|------------|
-| Starting balance of a new account | 1000 T$, set by the server | `STARTING_BALANCE`, used in `users.service.ts` |
+| Starting balance of a new account | 1000 T€, set by the server | `STARTING_BALANCE`, used in `users.service.ts` |
 | Bet duration | 60 s from the moment the bet is placed | `BET_DURATION_SECONDS` |
 | Win (price moved in the chosen direction) | stake × 1.85 credited (stake back + 85%) | `PAYOUT_MULTIPLIER` |
 | Loss | the stake is lost | |
@@ -39,7 +39,7 @@ All values are in `bets.constants.ts`.
 - **No overdraft**: the stake is debited with a single conditional update,
   `UPDATE "User" SET wallet = wallet - amount WHERE id = ? AND wallet >= amount`.
   PostgreSQL runs it atomically, so simultaneous bets can never take the
-  balance below zero. Tested: 8 simultaneous bets of 300 T$ with 1000 T$ →
+  balance below zero. Tested: 8 simultaneous bets of 300 T€ with 1000 T€ →
   exactly 3 accepted.
 - **Never paid twice**: settlement only pays if it is the one that moves the
   bet out of `"active"` (`UPDATE ... WHERE id = ? AND status = 'active'`).
@@ -136,11 +136,11 @@ An array of bet objects (same shape as above). A settled bet has `status`
 |--------------|-------------|
 | `coin`       | `BTC` or `ETH` |
 | `direction`  | `up` or `down` |
-| `amount`     | stake in T$, debited when the bet is placed |
+| `amount`     | stake in T€, debited when the bet is placed |
 | `entryPrice` | live price (EUR) when the bet was placed |
 | `exitPrice`  | live price (EUR) when the bet was settled |
 | `status`     | `active`, `won`, `lost` or `refunded` |
-| `payout`     | T$ credited at settlement: `floor(amount × 1.85)` if won, `amount` if refunded, `0` if lost |
+| `payout`     | T€ credited at settlement: `floor(amount × 1.85)` if won, `amount` if refunded, `0` if lost |
 | `expiresAt`  | when the bet ends (placement + 60 s) |
 | `settledAt`  | when the server settled it (at most about 1 s after `expiresAt`) |
 

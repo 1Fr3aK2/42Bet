@@ -2,13 +2,13 @@
 
 Documentation for the brute-force and DoS protection implemented on the login endpoint. Combines two complementary mechanisms: rate limiting by IP (nginx) and rate limiting by account (backend + Redis).
 
-> **Note on this revision:** the "Known simplifications / future work" section
-> has been updated — several items listed there have since been resolved. The
-> `dto.email` key shown below is confirmed correct (matches the team's
-> Authentication Module doc, which documents `POST /auth/login` taking
-> `email`/`password`) — `AUTH_HARDENING_REPORT.md` has been corrected to
-> match, resolving a discrepancy that existed in an earlier revision of this
-> document.
+> **Note on this revision (3 Nov 2026):** the per-account counter now belongs to
+> the **account** and no longer to the text typed in the login field. The login
+> field of `LoginDto` is `username`, and since the final-version PR it also
+> accepts the email, so keying on the typed text gave one account two counters
+> (see "Per-account key" below). The "Known simplifications / future work"
+> section was also updated earlier — several items listed there have since been
+> resolved.
 
 ## Why two mechanisms
 
@@ -50,7 +50,7 @@ for i in {1..20}; do
   curl -k -s -o /dev/null -w "%{http_code}\n" \
     -X POST https://localhost/auth/login \
     -H "Content-Type: application/json" \
-    -d '{"email":"test@test.com","password":"wrong"}'
+    -d '{"username":"test@test.com","password":"wrong"}'
 done
 ```
 Result: the first ~6 requests go through, the rest are rejected with 503 — confirms the expected behavior (rate + burst).
@@ -99,25 +99,55 @@ export class RateLimiterService implements OnModuleInit {
 
 ```typescript
 async login(dto: LoginDto) {
-  const key = "login_attempts:" + dto.email;
-  const allowed = await this.rateLimiter.checkLimit(key, 5, 1800);
-  if (!allowed) {
-    throw new UnauthorizedException('Invalid email or password');
+  // 1. Find the account first: by username or, when the value contains "@", by email.
+  let user = await this.prisma.user.findUnique({ where: { username: dto.username } });
+  if (!user && dto.username.includes('@')) {
+    user = await this.prisma.user.findUnique({ where: { email: dto.username } });
   }
 
-  // ... normal validation (findUnique, bcrypt.compare) ...
+  // 2. The key belongs to the account, not to the typed text.
+  const key = user
+    ? `login_attempts:user:${user.id}`
+    : `login_attempts:unknown:${createHash('sha256')
+        .update(dto.username.toLowerCase())
+        .digest('hex')}`;
+
+  // 3. Count the attempt and block above the limit.
+  const allowed = await this.rateLimiter.checkLimit(key, 5, 1800);
+  if (!allowed) {
+    throw new UnauthorizedException('Too many login attempts. Please try again later.');
+  }
+
+  if (!user) {
+    throw new UnauthorizedException('Invalid username or password');
+  }
+
+  // ... bcrypt.compare (wrong password -> 'Invalid username or password') ...
 
   await this.rateLimiter.resetLimit(key);
   // ... generate and return the token ...
 }
 ```
 
-- **Checked before the database query** — avoids spending a Postgres connection on already-blocked attempts (protects the Postgres connection pool, a finite resource)
+- **The account is looked up before the limiter** — the key needs the account id, so up to two indexed `findUnique` queries run first. The expensive step, `bcrypt.compare`, still only runs for attempts that were allowed, so a blocked account cannot be used to burn CPU
 - **5 failed attempts / 30 minutes** (1800s) — industry reference values; balances not annoying distracted users against not leaving an attacker too much room
-- **Identical error message** in all cases ("account doesn't exist", "wrong password", "blocked due to attempts") — avoids confirming to an attacker whether the account exists or whether it's being rate-limited
-- **Reset on success** — a correct login clears the failure history; old errors don't penalize forever
+- **Error messages** — an unknown account and a wrong password return the same `Invalid username or password` (401), which avoids confirming to an attacker whether the account exists. Once the limit is exceeded, every identifier — existing or not — gets `Too many login attempts. Please try again later.` (401), so the block message does not reveal whether the account exists either (unknown identifiers are counted too, see below)
+- **Reset on success** — a correct login clears the failure history of that account (`resetLimit` with the same `key` used by `checkLimit`); old errors don't penalize forever
 
 **Registered in `backend/src/auth/auth.module.ts`:** `RateLimiterService` added to `providers`.
+
+### Per-account key (username and email share one counter)
+
+The login field accepts the username or the email of the same account. If the key were built from the typed text (`login_attempts:${dto.username}`), the two spellings would have two independent counters: an attacker would get up to 10 attempts instead of 5, and an account locked through the username could still be logged into through the email. The key is therefore built from the account:
+
+| Situation | Redis key |
+|-----------|-----------|
+| The account exists | `login_attempts:user:${user.id}` |
+| No account matches | `login_attempts:unknown:<sha256 of the lowercased text>` |
+
+- Username and email of the same account give the same `user.id`, so they share one counter
+- Attempts on identifiers that match no account are still counted (otherwise unknown names could be tried without limit), but the typed text, which may be an email, is never stored in Redis in clear: only its SHA-256 is part of the key, which also gives the key a fixed length whatever is typed
+- `.toLowerCase()` makes `Foo@x.com` and `foo@x.com` share one counter in the unknown case
 
 ## Bug found during testing (unrelated to rate limiting) — resolved
 
@@ -128,24 +158,26 @@ While testing the IP rate limit, `/auth/login` was returning **HTTP 500** even f
 After the `backend_migrate` fix, both mechanisms were re-tested with the backend fully functional (no more 500s):
 
 - **IP rate limit:** 6 requests get `401` (reach the backend, invalid credentials), remaining requests get `503` (rejected by nginx). Reproduced twice with identical results.
-- **Account rate limit:** 6 spaced-out requests (7s apart) for the same account all return `401` (generic message, as intended). Verified directly in Redis that the counter and TTL are correct — `GET login_attempts:<email>` returned `6`, `TTL` returned a value consistent with the elapsed time since the first attempt.
+- **Account rate limit:** 6 spaced-out requests (7s apart) for the same account all return `401`. Verified directly in Redis that the counter and TTL are correct — at the time of that validation `GET login_attempts:<identifier>` returned `6`, `TTL` returned a value consistent with the elapsed time since the first attempt. The key has since changed to `login_attempts:user:<id>` (see above) and was re-validated, including the case of username and email alternating — see `RATE_LIMIT_TESTING.md`, Tests 14 and 15.
 
 Both mechanisms are confirmed working correctly end-to-end.
 
 ## Testing after implementation
 
 1. **By IP:** repeat the `curl` loop above — confirm 503 after the burst.
-2. **By account:** 6 consecutive failed attempts for the same email (from different origins/IPs, or with the IP limit temporarily disabled) — confirm 401 with the generic message on the 6th.
-3. **Reset:** 2-3 consecutive failures, then a successful login — confirm you get the full 5 attempts back (no "inherited" history).
+2. **By account:** 6 consecutive failed attempts for the same account (from different origins/IPs, or with the IP limit temporarily disabled) — confirm the 6th returns `401` with `Too many login attempts`.
+3. **Username and email:** alternate the two spellings of the same account — confirm they share one counter (one `login_attempts:user:<id>` key in Redis) and that a locked account is locked through both.
+4. **Reset:** 2-3 consecutive failures, then a successful login — confirm you get the full 5 attempts back (no "inherited" history).
 
-A separate, real bug was later found in this exact mechanism: the Redis key
-used in the shipped code did not actually include the per-account variable
-shown above, meaning every account shared a single global counter — five
-failed logins from anyone locked out login for everyone. Fixed by confirming
-the key includes the submitted identifier (as the snippet above shows); see
-`AUTH_HARDENING_REPORT.md` §1 for the full incident writeup. This is also the
-source of the `email`/`username` naming discrepancy flagged at the top of
-this document — worth resolving in the code itself, not just the docs.
+A separate, real bug was found in this mechanism earlier: the Redis key used in
+the shipped code did not include the per-account variable, meaning every account
+shared a single global counter — five failed logins from anyone locked out login
+for everyone. It was fixed by including the submitted identifier in the key; see
+`AUTH_HARDENING_REPORT.md` §1 for the full incident writeup. A second problem
+appeared when login by email was added: the identifier-based key gave one account
+two counters. It is fixed by keying on the account (`user.id`), as described in
+"Per-account key" above. The login field in the code is `username` (`LoginDto`);
+older revisions of this document called it `email`.
 
 ## Known simplifications / future work
 

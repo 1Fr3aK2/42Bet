@@ -4,6 +4,7 @@ import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service';
 import { LoginDto } from './login.dto';
 import { RateLimiterService } from '../rate-limiter/rate-limiter.service';
+import { createHash } from 'crypto';
 
 @Injectable()
 export class AuthService {
@@ -15,18 +16,12 @@ export class AuthService {
 
   async login(dto: LoginDto) {
 
-    const key = `login_attempts:${dto.username}`;
-    const allowed = await this.rateLimiter.checkLimit(key, 5, 1800);
-    if (!allowed) {
-      throw new UnauthorizedException('Too many login attempts. Please try again later.');
-    }
-
     let user = await this.prisma.user.findUnique({
       where: {
         username: dto.username,
       },
     });
-
+    
     // The login field also takes the email (the subject asks for email and
     // password authentication). Usernames cannot contain "@" (users/user-rules.ts),
     // so only an email reaches this second lookup.
@@ -36,6 +31,13 @@ export class AuthService {
           email: dto.username,
         },
       });
+    }
+    
+    const key = user ? `login_attempts:user:${user.id}` : `login_attempts:unknown:${createHash('sha256').update(dto.username.toLocaleLowerCase()).digest('hex')}`; 
+    
+    const allowed = await this.rateLimiter.checkLimit(key, 5, 1800);
+    if (!allowed) {
+      throw new UnauthorizedException('Too many login attempts. Please try again later.');
     }
 
     if (!user) {

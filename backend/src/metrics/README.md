@@ -172,14 +172,16 @@ different questions:
   consumed directly by a human or read in real time.
 - **`health/`** answers "is this service alive, right now?" — a point-in-time
   check, read synchronously by whoever needs an immediate yes/no (or
-  component-by-component) answer. That module has since grown two distinct
+  high-level component group) answer. That module has since grown two distinct
   endpoints of its own, which mirror this same kind of internal/external
   split: `GET /health` (minimal, used by the Docker Compose `healthcheck:`
-  for the `backend` service itself) and `GET /health/status` (richer, checks
-  one more component, and is the one proxied publicly through nginx at
-  `/health` for the standalone status page at `/status` to poll). See
-  `SECURITY_REPORT.md` §7 for the full reasoning behind keeping those two
-  endpoints separate.
+  for the `backend` service itself, and the only endpoint exposing per-service
+  details) and `GET /health/status` (always `200`, additionally checking
+  Elasticsearch, returning aggregated status and generic groups — `core` and
+  `monitoring` — to avoid exposing internal infrastructure topology publicly,
+  and proxied through nginx at `/health` for the standalone status page at
+  `/status` to poll). See `SECURITY_REPORT.md` §7 for the full reasoning
+  behind keeping those two endpoints separate.
 
 Metrics and health checks could in principle overlap (e.g. Prometheus could
 scrape a `/health`-style endpoint instead), but are kept as separate modules

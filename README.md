@@ -1,13 +1,11 @@
-*This project has been created as part of the 42 curriculum by mcarepa-, hugo-mar, pesilva-, &lt;rafael-login&gt;, &lt;duarte-login&gt;.*
-
-<!-- TODO(team): replace the four placeholders above with the 42 logins. -->
+*This project has been created as part of the 42 curriculum by mcarepa-, hugo-mar, pesilva-, raamorim, dsteiger.*
 
 # Transcendence
 
 ## Description
 
 **Transcendence** is a real-time crypto price prediction game with a community
-forum. Players bet a virtual currency (**T$**) on whether the price of **Bitcoin**
+forum. Players bet a virtual currency (**T€**) on whether the price of **Bitcoin**
 or **Ethereum** will go **up** or **down** in the next 60 seconds. Prices come
 live from the Kraken exchange, and the server records the prices and settles
 every bet. A forum lets players discuss, with automatic and manual moderation.
@@ -120,7 +118,6 @@ sealed, and this unseals it before the backend starts.
 |---------|------|
 | https://localhost/grafana/ | Grafana dashboards (Grafana login from `.env`) |
 | https://localhost/kibana/ | Kibana logs (user `elastic`, `ELASTIC_PASSWORD`) |
-| https://localhost/prometheus/ | Prometheus |
 | https://localhost/status | status page |
 | https://localhost/health | backend health check (JSON) |
 | https://localhost/api/admin/docs | Swagger documentation of the public admin API |
@@ -219,7 +216,7 @@ erDiagram
         string username UK
         string email UK
         string password "bcrypt hash"
-        int wallet "T$ balance"
+        int wallet "T€ balance"
         string avatar "optional, image data URL"
         int wins
         int losses
@@ -279,7 +276,7 @@ erDiagram
         int id PK
         string coin "BTC or ETH"
         string direction "up or down"
-        int amount "stake in T$"
+        int amount "stake in T€"
         float entryPrice
         float exitPrice
         string status "active, won, lost or refunded"
@@ -436,7 +433,7 @@ moderation AI (our moderation is rule-based, not AI).
 
 ### Miguel Dias
 
-- **Betting engine** (`backend/src/bets`): balance, placing bets, history, and the settlement loop; new accounts start with 1000 T$ set by the server; `Bet` table and migration; `scripts/test-bets.sh`.
+- **Betting engine** (`backend/src/bets`): balance, placing bets, history, and the settlement loop; new accounts start with 1000 T€ set by the server; `Bet` table and migration; `scripts/test-bets.sh`.
 - **Analytics dashboard** (module Data and Analytics, Major): `GET /users/me/analytics`, the `/bets` real-time socket, and the dashboard page with 4 charts, filters, live updates and CSV, JSON and PDF export; `scripts/test-analytics.sh`.
 - **Project audit** against the subject, and fixes for the problems that would have failed the evaluation: Filebeat not starting on hosts with umask 002, Kibana not starting with the `.env.example` values, and Grafana panels and Prometheus queries blocked by the WAF.
 - **Privacy Policy and Terms of Service** pages and the footer.
@@ -493,15 +490,14 @@ moderation AI (our moderation is rule-based, not AI).
   cannot settle it within 10 seconds of its end (for example during a
   restart), the stake is refunded.
 - The application is tested on the latest stable Google Chrome only.
-- Prometheus is reachable through nginx without a login (read-only); Grafana
-  and Kibana require one.
+- Prometheus is not published publicly through nginx (returns 404); Grafana
+  proxies all PromQL queries server-side over the internal Docker network and
+  requires a login. Kibana also requires authentication.
 - Filebeat reads the logs of every Docker container on the host, not only this
   project's.
 - The certificates are self-signed, so the browser shows a warning the first time.
 - After a reboot, run `make down` and then `make`, so that Vault is unsealed
   before the backend starts.
-
-<!-- TODO(team): update this list before the evaluation (frontend production build). -->
 
 ## Credits
 
