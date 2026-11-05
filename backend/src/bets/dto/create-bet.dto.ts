@@ -10,7 +10,7 @@ export class CreateBetDto {
   @IsIn(['up', 'down'])
   direction: 'up' | 'down';
 
-  // Stake in T$. The real limit is the user's balance, checked when the bet
+  // Stake in T€. The real limit is the user's balance, checked when the bet
   // is placed; the maximum only rejects absurd values.
   @IsInt()
   @Min(1)

@@ -119,7 +119,7 @@ export default function PriceChart({ coin, ticker, bets }) {
         lineWidth: 2,
         lineStyle: LineStyle.Solid,
         axisLabelVisible: true,
-        title: `${bet.direction.toUpperCase()} ${bet.amount} T$`,
+        title: `${bet.direction.toUpperCase()} ${bet.amount} T€`,
       }));
     return () => {
       if (seriesRef.current === series) lines.forEach((line) => series.removePriceLine(line));

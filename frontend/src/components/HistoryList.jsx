@@ -12,7 +12,7 @@ export default function HistoryList({ history }) {
           // or settled too late), with the payout the server credited.
           const diff = h.exitPrice ? ((h.exitPrice - h.entryPrice) / h.entryPrice) * 100 : 0;
           const sign = diff >= 0 ? '+' : '';
-          const payout = h.status === 'won' ? `+T$ ${h.payout}` : h.status === 'lost' ? `-T$ ${h.amount}` : 'Refunded';
+          const payout = h.status === 'won' ? `+T€ ${h.payout}` : h.status === 'lost' ? `-T€ ${h.amount}` : 'Refunded';
           const result = h.status === 'won' ? 'win' : h.status === 'lost' ? 'loss' : '';
           return (
             <div className="history-item" key={h.id}>

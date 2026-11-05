@@ -62,10 +62,10 @@ export function placeBet(token, { coin, direction, amount }) {
 // and not above the balance. Returns the error message, or '' when valid.
 // The server checks everything again: this is only for the player.
 export function betAmountError(value, balance) {
-  if (!/^\d+$/.test(String(value))) return 'Enter the amount in whole T$ (digits only)';
+  if (!/^\d+$/.test(String(value))) return 'Enter the amount in whole T€ (digits only)';
   const amount = Number(value);
-  if (amount < MIN_BET) return `The minimum bet is ${MIN_BET} T$`;
-  if (amount > MAX_BET) return `The maximum bet is ${MAX_BET.toLocaleString('en-US')} T$`;
+  if (amount < MIN_BET) return `The minimum bet is ${MIN_BET} T€`;
+  if (amount > MAX_BET) return `The maximum bet is ${MAX_BET.toLocaleString('en-US')} T€`;
   if (balance !== null && amount > balance) return 'Insufficient balance';
   return '';
 }

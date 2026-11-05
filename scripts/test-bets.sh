@@ -5,7 +5,7 @@
 #
 # Creates two users and checks the betting engine (backend/src/bets)
 # through nginx, the same way the browser uses it:
-#   - new accounts start with 1000 T$, set by the server
+#   - new accounts start with 1000 T€, set by the server
 #   - betting needs a valid login token
 #   - invalid bets are refused: the amount must be a positive whole number
 #   - the balance never goes below zero, even with simultaneous bets
@@ -76,7 +76,7 @@ for b in json.load(sys.stdin):
         ok = b["payout"] == 0 and x != e and (x > e) != up
     else:
         ok = b["status"] == "refunded" and b["payout"] == b["amount"]
-    print("%s bet %s: %s %s %s T$ -> %s, %s -> %s, payout %s" % (
+    print("%s bet %s: %s %s %s T€ -> %s, %s -> %s, payout %s" % (
         "PASS" if ok else "FAIL", b["id"], b["coin"], b["direction"],
         b["amount"], b["status"], e, x, b["payout"]))
     if str(b["id"]) != skip:

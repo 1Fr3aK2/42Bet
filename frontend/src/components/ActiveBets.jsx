@@ -30,11 +30,11 @@ export default function ActiveBets({ bets, now }) {
           </div>
           <div className="active-bet-row">
             <span className="active-bet-label">Amount</span>
-            <span className="active-bet-value">T$ {bet.amount.toLocaleString()}</span>
+            <span className="active-bet-value">T€ {bet.amount.toLocaleString()}</span>
           </div>
           <div className="active-bet-row">
             <span className="active-bet-label">Potential win</span>
-            <span className="active-bet-value up">T$ {Math.floor(bet.amount * PAYOUT).toLocaleString()}</span>
+            <span className="active-bet-value up">T€ {Math.floor(bet.amount * PAYOUT).toLocaleString()}</span>
           </div>
         </div>
       ))}

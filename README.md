@@ -7,7 +7,7 @@
 ## Description
 
 **Transcendence** is a real-time crypto price prediction game with a community
-forum. Players bet a virtual currency (**T$**) on whether the price of **Bitcoin**
+forum. Players bet a virtual currency (**T€**) on whether the price of **Bitcoin**
 or **Ethereum** will go **up** or **down** in the next 60 seconds. Prices come
 live from the Kraken exchange, and the server records the prices and settles
 every bet. A forum lets players discuss, with automatic and manual moderation.
@@ -218,7 +218,7 @@ erDiagram
         string username UK
         string email UK
         string password "bcrypt hash"
-        int wallet "T$ balance"
+        int wallet "T€ balance"
         string avatar "optional, image data URL"
         int wins
         int losses
@@ -278,7 +278,7 @@ erDiagram
         int id PK
         string coin "BTC or ETH"
         string direction "up or down"
-        int amount "stake in T$"
+        int amount "stake in T€"
         float entryPrice
         float exitPrice
         string status "active, won, lost or refunded"
@@ -435,7 +435,7 @@ moderation AI (our moderation is rule-based, not AI).
 
 ### Miguel Dias
 
-- **Betting engine** (`backend/src/bets`): balance, placing bets, history, and the settlement loop; new accounts start with 1000 T$ set by the server; `Bet` table and migration; `scripts/test-bets.sh`.
+- **Betting engine** (`backend/src/bets`): balance, placing bets, history, and the settlement loop; new accounts start with 1000 T€ set by the server; `Bet` table and migration; `scripts/test-bets.sh`.
 - **Analytics dashboard** (module Data and Analytics, Major): `GET /users/me/analytics`, the `/bets` real-time socket, and the dashboard page with 4 charts, filters, live updates and CSV, JSON and PDF export; `scripts/test-analytics.sh`.
 - **Project audit** against the subject, and fixes for the problems that would have failed the evaluation: Filebeat not starting on hosts with umask 002, Kibana not starting with the `.env.example` values, and Grafana panels and Prometheus queries blocked by the WAF.
 - **Privacy Policy and Terms of Service** pages and the footer.
