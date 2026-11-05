@@ -37,21 +37,21 @@ async function bootstrap() {
   // The "Authorize" button in the UI lets the evaluator enter the X-API-Key,
   // and every request made from the Swagger UI will then include that header.
   // All actual endpoints are still protected by AdminApiKeyGuard.
-  const config = new DocumentBuilder()
-    .setTitle('Transcendence Public Admin API')
-    .setDescription(
+  const config = new DocumentBuilder()                                                  // Builds the OpenAPI configuration used to generate the Swagger documentation
+    .setTitle('Transcendence Public Admin API')                                         // Sets the API documentation title
+    .setDescription(                                                                    // Sets the API description
       'Public administrative API for managing users, forum content and moderation.',
     )
-    .setVersion('1.0')
-    .addApiKey(
+    .setVersion('1.0')                                                                  // Sets the documented API version
+    .addApiKey(                                                                         // Defines an API key authentication scheme in the OpenAPI documentation
       {
-        type: 'apiKey',
-        name: 'X-API-Key',
-        in: 'header',
+        type: 'apiKey',                                                                 // Authentication uses an API key
+        name: 'X-API-Key',                                                              // Name of the HTTP header containing the key
+        in: 'header',                                                                   // Specifies that the key is sent in an HTTP header
       },
-      'admin-api-key',
+      'admin-api-key',                                                                  // Security scheme identifier, referenced by @ApiSecurity()
     )
-    .build();
+    .build();                                                                           // Generates the final OpenAPI configuration object
 
   // Creates the Swagger document using the NestJS app, the OpenAPI configuration,
   // and only the controllers belonging to PublicApiModule
@@ -59,7 +59,7 @@ async function bootstrap() {
     include: [PublicApiModule],
   });
 
-  SwaggerModule.setup('api/admin/docs', app, document);
+  SwaggerModule.setup('api/admin/docs', app, document);       // Makes the Swagger UI available at https://localhost/api/admin/docs
 
   await app.listen(8000);
 }
