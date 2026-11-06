@@ -275,7 +275,7 @@ as the superuser, since Prisma migrations require DDL.
 | SSL certificates | `mkcert` (self-signed, local) | Use Let's Encrypt or a real certificate |
 | ~~Vault root token~~ | **Resolved** — the root token is now used only for the initial bootstrap (secrets, policy, AppRole) and automatically revoked by `vault_init.sh` immediately afterward; every subsequent authentication uses a scoped AppRole token. See `VAULT_PRODUCTION.md`, "Idempotent bootstrap and root token revocation" | — |
 | AppRole credentials (RoleID/SecretID) | **Improved** — now persisted to files under the `vault-approle` volume and consumed directly by `backend`/`backend_seed`, rather than only printed to stdout and requiring manual capture; see `SECURITY_REPORT.md` §3 | Confirm these files are never included in any backup or export that leaves the host unencrypted |
-| ~~Backend uses Postgres superuser~~ | **Resolved** — `app_user`, provisioned idempotently by `postgres_app_user_init`, has only `SELECT`/`INSERT`/`UPDATE`/`DELETE` on application tables, including tables that already existed before the change; see Test 9 and `SECURITY_REPORT.md` §2 | — |— |
+| ~~Backend uses Postgres superuser~~ | **Resolved** — `app_user`, provisioned idempotently by `postgres_app_user_init`, has only `SELECT`/`INSERT`/`UPDATE`/`DELETE` on application tables, including tables that already existed before the change; see Test 9 and `SECURITY_REPORT.md` §2 | — |
 
 ---
 
