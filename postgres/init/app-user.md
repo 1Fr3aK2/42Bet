@@ -52,16 +52,13 @@ psql -v ON_ERROR_STOP=1 \
   -v owner="$POSTGRES_USER" \
   -v dbname="$POSTGRES_DB" \
   -h postgres --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<'EOSQL'
-DO
-$$
-BEGIN
-  IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = :'app_user') THEN
-    EXECUTE format('CREATE ROLE %I WITH LOGIN PASSWORD %L NOSUPERUSER NOCREATEDB NOCREATEROLE', :'app_user', :'app_password');
-  ELSE
-    EXECUTE format('ALTER ROLE %I WITH PASSWORD %L', :'app_user', :'app_password');
-  END IF;
-END
-$$;
+SELECT format(
+  CASE WHEN EXISTS (SELECT FROM pg_roles WHERE rolname = :'app_user')
+       THEN 'ALTER ROLE %I WITH PASSWORD %L'
+       ELSE 'CREATE ROLE %I WITH LOGIN PASSWORD %L NOSUPERUSER NOCREATEDB NOCREATEROLE'
+  END,
+  :'app_user', :'app_password')
+\gexec
 
 GRANT CONNECT ON DATABASE :"dbname" TO :"app_user";
 GRANT USAGE ON SCHEMA public TO :"app_user";
@@ -94,15 +91,18 @@ EOSQL
 
 ### The SQL part
 
-- **`DO $$ ... $$` block with `IF NOT EXISTS`** — Postgres has no
-  `CREATE ROLE IF NOT EXISTS`. The block checks `pg_roles` first: on the first
-  run it creates the role; on every later run (the service runs on every
-  `docker compose up`) it instead runs `ALTER ROLE ... PASSWORD`, which also
-  keeps the role's password in sync if `APP_DB_PASSWORD` is ever rotated in
-  `.env`.
-- **`EXECUTE format('...', %I, %L)`** — the role name comes from a variable, so
-  it can't be interpolated directly inside the dynamic SQL string the way
-  `:"app_user"` works in a plain statement; `format()` with `%I`/`%L` quotes
+- **`SELECT format(CASE ...) \gexec`** — Postgres has no
+  `CREATE ROLE IF NOT EXISTS`. The query checks `pg_roles` and returns the text
+  of either `CREATE ROLE ...` (first run) or `ALTER ROLE ... PASSWORD ...`
+  (every later run, since the service runs on every `docker compose up`, which
+  also keeps the role's password in sync if `APP_DB_PASSWORD` is ever rotated
+  in `.env`). `\gexec` then executes each returned row as SQL.
+- **Why not a `DO $$ ... $$` block.** `psql` does not substitute variables such
+  as `:'app_user'` inside a dollar-quoted string, so the server would receive
+  the `:` literally and fail with `syntax error at or near ":"` (this is
+  exactly what happened with the first version of this script, and it left the
+  one-shot service restarting in a loop). Running `format()` outside the `$$`
+  block lets `psql` substitute the variables first; `%I` and `%L` still quote
   the identifier and the literal safely.
 - **`GRANT ... ON ALL TABLES/SEQUENCES IN SCHEMA public`** — grants access to
   whatever tables and sequences already exist in `public` at the moment the
@@ -170,8 +170,10 @@ volume. Running it as a separate service, the same pattern already used for
 safely re-run — on every `docker compose up`, whether the database is brand
 new or already populated.
 
-The `postgres` service itself no longer mounts anything under
-`/docker-entrypoint-initdb.d`.
+The `postgres` service itself neither mounts anything under
+`/docker-entrypoint-initdb.d` nor receives `APP_DB_USER` / `APP_DB_PASSWORD`:
+the server never reads them, so keeping them there would only expose the
+`app_user` password in the `docker inspect` output of the database container.
 
 ### When it runs
 
@@ -181,10 +183,15 @@ idempotent (see "The SQL part" above), running it again on a database that
 already has `app_user` provisioned is harmless — it just re-grants the same
 privileges and re-syncs the password.
 
-This also means there is **no special step needed for an existing
-environment**: pulling this change and running `make update` provisions
-`app_user` on the current database and grants it access to the tables that
-already exist, without requiring a full `make re`.
+This also means the database side needs no special step for an existing
+environment: pulling this change and running `make update` provisions
+`app_user` and grants it access to the tables that already exist. The backend,
+however, only switches to `app_user` once `secret/postgres` in Vault holds its
+credentials. Vault's root token is revoked after the first bootstrap, so
+re-running `vault_init` does not rewrite the secret (see `VAULT_PRODUCTION.md`,
+"Practical consequence"). On an existing environment, update `secret/postgres`
+with `vault operator generate-root` and `vault kv put`, or rebuild with
+`make re`.
 
 ### Interaction with migrations
 
@@ -195,6 +202,10 @@ addition to `postgres` being healthy — so migrations only run once `app_user`
 exists. `backend_migrate` then creates tables as the owner; the default
 privileges configured by this script give `app_user` access to them
 automatically, including tables added by future migrations.
+
+A consequence worth knowing: if `postgres_app_user_init` fails and keeps
+restarting, `backend_migrate` waits for it indefinitely and `docker compose up`
+appears to hang. Check `docker compose logs postgres_app_user_init` first.
 
 ### Vault and the backend
 
@@ -221,8 +232,29 @@ Check that the service ran successfully:
 
 ```bash
 docker compose logs postgres_app_user_init
-docker compose ps postgres_app_user_init
+docker compose ps -a postgres_app_user_init
 ```
+
+It must show `Exited (0)`, with `CREATE ROLE` (or `ALTER ROLE`) and the
+`GRANT` lines in the log, and no errors.
+
+Check that the role has no special attributes:
+
+```bash
+docker compose exec postgres sh -c 'psql -U $POSTGRES_USER -d $POSTGRES_DB -c "\du"'
+```
+
+`app_user` must appear with an empty attribute list.
+
+Check that the backend really connects as `app_user` (with the backend
+running):
+
+```bash
+docker compose exec postgres sh -c 'psql -U $POSTGRES_USER -d $POSTGRES_DB -c "SELECT usename, count(*) FROM pg_stat_activity WHERE datname = current_database() GROUP BY usename;"'
+```
+
+An `app_user` row must appear. The `user` rows come from the `psql` session
+itself and from `postgres_exporter`.
 
 Open a session as `app_user`:
 
@@ -233,15 +265,15 @@ docker compose exec postgres sh -c 'psql -U app_user -d $POSTGRES_DB'
 Then run:
 
 ```sql
-SELECT rolname, rolsuper, rolcreaterole, rolcreatedb FROM pg_roles WHERE rolname = current_user;
+SELECT rolsuper, rolcreaterole, rolcreatedb FROM pg_roles WHERE rolname = current_user;
+SELECT count(*) FROM "User";
 CREATE TABLE teste_app_user (id int);
 COPY (SELECT 1) TO PROGRAM 'id';
 CREATE ROLE intruso;
 ```
 
-The first statement must return `f` in every column. The other three must
-fail with `permission denied`. A SELECT and an INSERT on an application table
-must work.
+The first statement must return `f` in every column and the second must work.
+The last three must fail with `permission denied`.
 
 To confirm the fix for pre-existing environments specifically: run
 `make update` (not `make re`) against a database that was populated **before**
@@ -256,13 +288,17 @@ existed before `postgres_app_user_init` ever ran.
 - **The password lives in two places.** The same `.env` value is given to
   Postgres (via this service) and to Vault. This follows the existing pattern
   of the project, where `.env` is the source of truth for secrets.
-- **Rotating `APP_DB_PASSWORD` is now self-service.** Unlike the earlier,
-  entrypoint-based version of this script, re-running
-  `postgres_app_user_init` (which happens automatically on every
-  `docker compose up`) picks up a changed `APP_DB_PASSWORD` via the
-  `ALTER ROLE` branch — no manual `ALTER ROLE` or full `make re` needed, as
-  long as the corresponding Vault secret is updated the same way described in
-  `VAULT_PRODUCTION.md`.
+- **The password is visible in `docker inspect`.** `postgres_app_user_init`
+  and `vault_init` receive it through `environment`, which anyone with access
+  to the Docker daemon can read. Removing it from the `postgres` service
+  reduces the exposure but does not eliminate it. This is an accepted
+  trade-off for a local, single-host project.
+- **Rotating `APP_DB_PASSWORD` is self-service on the database side.** Unlike
+  an entrypoint-based script, re-running `postgres_app_user_init` (which
+  happens automatically on every `docker compose up`) picks up a changed
+  `APP_DB_PASSWORD` via the `ALTER ROLE` branch. The Vault secret must be
+  updated as well, the way `VAULT_PRODUCTION.md` describes, because
+  `vault_init` no longer rewrites it once the root token is revoked.
 - **No guard against missing variables.** If `APP_DB_USER` or
   `APP_DB_PASSWORD` is empty, the role ends up with an empty identifier or an
   unusable password. A line such as

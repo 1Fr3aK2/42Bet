@@ -87,7 +87,10 @@ The script handles, in order:
    production mode doesn't, so it has to be enabled explicitly
    (`vault secrets enable -path=secret -version=2 kv`), idempotently.
 5. **Storing the five secrets** (Postgres, Redis, admin API key, admin
-   account, JWT secret).
+   account, JWT secret). The Postgres entry holds the credentials of
+   `app_user`, the backend's least-privilege database role (audit finding
+   S9), not those of the `POSTGRES_USER` superuser — see
+   `postgres/init/ensure-app-user.sh`.
 6. **Loading the policy** (`backend-policy`) and **enabling AppRole**.
 7. **Creating `backend-role`**, with `secret_id_ttl=0` — see below.
 8. **Writing `role_id` and `secret_id`** to `/vault/approle`.
@@ -192,6 +195,17 @@ This section exists so the *other* option (updating one secret without
 wiping everything) isn't a dead end now that the root token is gone by
 default.
 
+**This also applies to the S9 change** (least-privilege database role).
+`secret/postgres` now holds the credentials of `app_user`, written by
+`vault-init.sh` from `APP_DB_USER` / `APP_DB_PASSWORD`. On an environment
+whose Vault was bootstrapped *before* that change, re-running `vault_init`
+will not rewrite the secret, so the backend keeps connecting with the old
+(superuser) credentials until the secret is updated with the procedure above
+(`vault kv put secret/postgres user="<app_user>" password="<password>"`) or
+the stack is rebuilt with `make re`. The `postgres_app_user_init` service
+creates the database role on its own on every `docker compose up`, so only
+the Vault side needs this manual step.
+
 ## Operational Note: Vault Restarts
 
 The `vault_init` service only runs once per container lifecycle — it
@@ -291,3 +305,7 @@ surfaced several real bugs:
    already complete" message and an immediate exit, with no secrets
    rewritten, no policy reloaded, and no new AppRole credentials generated
    (`role_id`/`secret_id` file contents unchanged from before this run).
+8. **Backend uses the least-privilege database role (S9).** With the stack
+   up, confirm the backend connects as `app_user`:
+   `docker compose exec postgres sh -c 'psql -U $POSTGRES_USER -d $POSTGRES_DB -c "SELECT usename, count(*) FROM pg_stat_activity WHERE datname = current_database() GROUP BY usename;"'`
+   — an `app_user` row must appear.

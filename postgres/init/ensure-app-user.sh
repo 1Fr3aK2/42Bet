@@ -9,16 +9,13 @@ psql -v ON_ERROR_STOP=1 \
   -v owner="$POSTGRES_USER" \
   -v dbname="$POSTGRES_DB" \
   -h postgres --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<'EOSQL'
-DO
-$$
-BEGIN
-  IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = :'app_user') THEN
-    EXECUTE format('CREATE ROLE %I WITH LOGIN PASSWORD %L NOSUPERUSER NOCREATEDB NOCREATEROLE', :'app_user', :'app_password');
-  ELSE
-    EXECUTE format('ALTER ROLE %I WITH PASSWORD %L', :'app_user', :'app_password');
-  END IF;
-END
-$$;
+SELECT format(
+  CASE WHEN EXISTS (SELECT FROM pg_roles WHERE rolname = :'app_user')
+       THEN 'ALTER ROLE %I WITH PASSWORD %L'
+       ELSE 'CREATE ROLE %I WITH LOGIN PASSWORD %L NOSUPERUSER NOCREATEDB NOCREATEROLE'
+  END,
+  :'app_user', :'app_password')
+\gexec
 
 GRANT CONNECT ON DATABASE :"dbname" TO :"app_user";
 GRANT USAGE ON SCHEMA public TO :"app_user";

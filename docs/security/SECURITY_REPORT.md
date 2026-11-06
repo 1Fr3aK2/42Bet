@@ -91,14 +91,19 @@ common attack vectors. Full detail in `SECURITY_TESTING.md`.
   `SELECT`/`INSERT`/`UPDATE`/`DELETE` — no `CREATE`, no `CREATEROLE`, no
   external-program `COPY`. Idempotent and safe against already-populated
   databases: it grants access to existing tables directly, and to future ones
-  via `ALTER DEFAULT PRIVILEGES`, so `make update` alone (no `make re`) is
-  enough even on an environment that predates this change. The backend's
-  `secret/postgres` Vault entry now holds `app_user`'s credentials, not the
-  superuser's. `backend_migrate` still connects as `POSTGRES_USER` (needs DDL
-  for migrations), and now also depends on `postgres_app_user_init`
-  completing first. Verified: `CREATE TABLE`, `CREATE ROLE` and
-  `COPY ... TO PROGRAM` all return `permission denied` as `app_user`;
-  `test-bets.sh` (54/54) and `test-users.sh` (19/19) unaffected.
+  via `ALTER DEFAULT PRIVILEGES`, so the database side needs no `make re` on
+  an environment that predates this change; the backend switches to
+  `app_user` once `secret/postgres` is updated in Vault (see
+  `VAULT_PRODUCTION.md`). The backend's `secret/postgres` Vault entry now
+  holds `app_user`'s credentials, not the superuser's. `backend_migrate`
+  still connects as `POSTGRES_USER` (needs DDL for migrations), and now also
+  depends on `postgres_app_user_init` completing first. Verified:
+  `CREATE TABLE`, `CREATE ROLE` and `COPY ... TO PROGRAM` all return
+  `permission denied` as `app_user`, reads on application tables work, and
+  `pg_stat_activity` shows the backend connecting as `app_user`. With the backend
+  running as `app_user`, `test-bets.sh` (54/54) and `test-users.sh` (19/19) pass,
+  and `test-security.sh` reports 23 OK; its only two failures are findings owned
+  by other modules (S3a, forum search length; S6, avatar content check).
 - Exposed Redis/Postgres ports and self-signed certificates remain accepted
   trade-offs for this project's scope (not production deployment);
   documented rather than silently ignored.
@@ -444,8 +449,13 @@ with the valid key provided.
 
 Updated from the original report — several previous gaps are now closed
 (Vault dev mode, forum per-user rate limiting, centralized logging, Postgres
-least privilege); what remains open:
+least privilege for the backend); what remains open:
 
+- **`postgres_exporter` still connects as the Postgres superuser** — the
+  S9 fix covers the backend's runtime connections only. The exporter uses
+  `POSTGRES_USER` in its `DATA_SOURCE_NAME`, which is the same least-privilege
+  gap in the monitoring stack. A dedicated role granted `pg_monitor` would
+  close it.
 - **Container hardening** — `no-new-privileges`, `read_only` filesystems
   where feasible, not yet applied across services.
 - **Rate limit reset test (Test 12)** — verifying that a successful login
