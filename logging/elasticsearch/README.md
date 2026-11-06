@@ -41,12 +41,12 @@ the same content, so running it again (for example on every
 1. **Wait for Elasticsearch.** Polls the cluster health endpoint every 2
    seconds until it answers. This is a second safety net on top of the
    compose-level healthcheck.
-2. **Create the ILM policy** `transcendence-logs-policy`.
-3. **Create an index template** for `transcendence-logs-*` that points new
+2. **Create the ILM policy** `42bet-logs-policy`.
+3. **Create an index template** for `42bet-logs-*` that points new
    indices at that policy.
 4. **Create an index template** for `waf-audit-*` (the ModSecurity audit log,
    read by Filebeat from the shared volume) pointing at the same policy.
-5. **Apply the policy retroactively** to any existing `transcendence-logs-*`
+5. **Apply the policy retroactively** to any existing `42bet-logs-*`
    and `waf-audit-*` indices.
 
 ### Why step 5 exists
@@ -65,7 +65,7 @@ matches yet, which is the normal case on a first run.
 |--------|---------------------------------------------|---------------------------------|
 | Delete | 14 days after index creation                | Delete the index                |
 
-Both log families (`transcendence-logs-*` and `waf-audit-*`) share the same
+Both log families (`42bet-logs-*` and `waf-audit-*`) share the same
 policy, so application logs and WAF audit logs have the same retention.
 
 A detail worth knowing:
@@ -77,7 +77,7 @@ A detail worth knowing:
 ## How to verify it works
 
 - In Kibana, open **Stack Management → Index Lifecycle Policies** and check
-  that `transcendence-logs-policy` exists, and that it lists indices as linked
+  that `42bet-logs-policy` exists, and that it lists indices as linked
   to it.
 - In **Index Management**, open a log index and check its lifecycle tab.
 - In Kibana's Dev Tools, the `_ilm/explain` API on an index shows its current
