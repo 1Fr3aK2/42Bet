@@ -74,7 +74,7 @@ FATAL: role "postgres" does not exist
 
 **Command**:
 ```bash
-docker run --rm --network 42Bet_42Bet postgres:16 psql -h postgres -U <POSTGRES_USER> -d <POSTGRES_DB>
+docker run --rm --network 42bet_42Bet postgres:16 psql -h postgres -U <POSTGRES_USER> -d <POSTGRES_DB>
 ```
 
 **Result obtained**:

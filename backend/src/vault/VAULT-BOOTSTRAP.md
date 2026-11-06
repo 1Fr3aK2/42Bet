@@ -1,6 +1,6 @@
 # Vault Secrets Loader
 
-Module of **ft_42Bet** responsible for loading the application's secrets from [HashiCorp Vault](https://www.vaultproject.io/) at service startup, using **AppRole** authentication. No secret lives in a `.env` file, in the source code or in the Docker image: they are fetched from Vault at runtime and injected into `process.env`.
+Module of **ft_transcendence** responsible for loading the application's secrets from [HashiCorp Vault](https://www.vaultproject.io/) at service startup, using **AppRole** authentication. No secret lives in a `.env` file, in the source code or in the Docker image: they are fetched from Vault at runtime and injected into `process.env`.
 
 ## How it works
 

@@ -127,7 +127,7 @@ elasticsearch_ilm_init:
   container_name: elasticsearch_ilm_init
   image: docker.elastic.co/elasticsearch/elasticsearch:8.19.18
   networks:
-    - 42bet
+    - 42Bet
   environment:
     ELASTIC_PASSWORD: "${ELASTIC_PASSWORD}"
   entrypoint: ["/bin/sh"]
