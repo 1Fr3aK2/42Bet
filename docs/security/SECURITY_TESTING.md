@@ -40,7 +40,7 @@ echo "PING" | nc localhost 6379
 
 **Conclusion**: Redis rejects any command without prior authentication. The `--requirepass` flag is correctly configured.
 
-**Note**: Port `6379` is exposed on the host to make local development easier. In production, the `ports` section for Redis should be removed from the compose file — the service should only be accessible within the internal Docker network (`transcendence`).
+**Note**: Port `6379` is exposed on the host to make local development easier. In production, the `ports` section for Redis should be removed from the compose file — the service should only be accessible within the internal Docker network (`42Bet`).
 
 ---
 
@@ -74,7 +74,7 @@ FATAL: role "postgres" does not exist
 
 **Command**:
 ```bash
-docker run --rm --network transcendence_transcendence postgres:16 psql -h postgres -U <POSTGRES_USER> -d <POSTGRES_DB>
+docker run --rm --network 42Bet_42Bet postgres:16 psql -h postgres -U <POSTGRES_USER> -d <POSTGRES_DB>
 ```
 
 **Result obtained**:
