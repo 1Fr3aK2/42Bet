@@ -37,7 +37,7 @@ docker inspect backend --format '{{range .NetworkSettings.Networks}}{{.IPAddress
 docker compose stop backend
 docker compose rm -f backend
 # 4. "Roubar" o IP antigo com um contentor dummy para forçar um IP diferente
-docker run -d --name ladrao_de_ip --network transcendence_transcendence alpine sleep 3600
+docker run -d --name ladrao_de_ip --network 42Bet_42Bet alpine sleep 3600
 # 5. Recriar o backend (vai receber um IP diferente)
 docker compose up -d --no-deps backend
 # 6. Verificar que o IP mudou
@@ -278,7 +278,7 @@ curl -k https://localhost/health
 # ✅ {"status":"up",...}
 # 3. Forçar mudança de IP do backend (mesmo teste de antes)
 docker compose stop backend && docker compose rm -f backend
-docker run -d --name ladrao_de_ip --network transcendence_transcendence alpine sleep 3600
+docker run -d --name ladrao_de_ip --network 42Bet_42Bet alpine sleep 3600
 docker compose up -d --no-deps backend
 # 4. Esperar ~15 segundos para o backend ficar healthy
 # 5. Testar — AGORA FUNCIONA!
