@@ -51,7 +51,9 @@ The stack runs entirely on Docker Compose, started with a single command:
 - **backend / frontend / backend_migrate / backend_seed** — the application
   itself, plus dedicated one-shot services for running migrations and seeding
   the admin account, both gated with `condition: service_completed_successfully`
-  so the backend never starts against an inconsistent database.
+  so the backend never starts against an inconsistent database. A further
+  one-shot service, `postgres_app_user_init`, provisions the backend's
+  least-privilege database role before `backend_migrate` runs.
 - **postgres_backup** — automated daily `pg_dump`, 7-day retention.
 
 Certificates are generated locally via `mkcert` with an automatic, native `openssl` fallback featuring Subject Alternative Name (SAN) extensions, completely eliminating any dependency on `sudo`. All inter-service traffic inside the Docker network is unencrypted by design (permitted by the project subject); every path reachable from a browser goes through nginx over HTTPS.
@@ -82,14 +84,21 @@ common attack vectors. Full detail in `SECURITY_TESTING.md`.
   (secrets, policy, AppRole) completes; the backend only ever authenticates
   with a scoped AppRole token afterwards. See Section 3 and
   `VAULT_PRODUCTION.md`, "Idempotent bootstrap and root token revocation".
-- ~~Backend connects to Postgres as the superuser (S9)~~ — **resolved.**
-  `postgres/init/01-app-user.sh` creates `app_user` with `SELECT`/`INSERT`/
-  `UPDATE`/`DELETE` only, no `CREATE`, no `CREATEROLE`, no external-program
-  `COPY`. The backend's `secret/postgres` Vault entry now holds `app_user`'s
-  credentials, not the superuser's. `backend_migrate` still connects as
-  `POSTGRES_USER` (needs DDL for migrations). Verified: `CREATE TABLE`,
-  `CREATE ROLE` and `COPY ... TO PROGRAM` all return `permission denied` as
-  `app_user`; `test-bets.sh` (54/54) and `test-users.sh` (19/19) unaffected.
+- ~~Backend connects to Postgres as the superuser (S9)~~ — **resolved.** A
+  one-shot `postgres_app_user_init` service runs
+  `postgres/init/ensure-app-user.sh` on every `docker compose up`, creating
+  (or, on later runs, updating the password of) `app_user`, which has only
+  `SELECT`/`INSERT`/`UPDATE`/`DELETE` — no `CREATE`, no `CREATEROLE`, no
+  external-program `COPY`. Idempotent and safe against already-populated
+  databases: it grants access to existing tables directly, and to future ones
+  via `ALTER DEFAULT PRIVILEGES`, so `make update` alone (no `make re`) is
+  enough even on an environment that predates this change. The backend's
+  `secret/postgres` Vault entry now holds `app_user`'s credentials, not the
+  superuser's. `backend_migrate` still connects as `POSTGRES_USER` (needs DDL
+  for migrations), and now also depends on `postgres_app_user_init`
+  completing first. Verified: `CREATE TABLE`, `CREATE ROLE` and
+  `COPY ... TO PROGRAM` all return `permission denied` as `app_user`;
+  `test-bets.sh` (54/54) and `test-users.sh` (19/19) unaffected.
 - Exposed Redis/Postgres ports and self-signed certificates remain accepted
   trade-offs for this project's scope (not production deployment);
   documented rather than silently ignored.
@@ -467,5 +476,7 @@ least privilege); what remains open:
 - `elasticsearch_ilm_init` and `kibana_user_init` services (automated, idempotent ELK configuration)
 - Hardened Vault deployment (real init/unseal, TLS, persisted AppRole credentials)
 - Aggregated health check (`/health`, `/health/status`) and standalone status page
-- Least-privilege Postgres role (`app_user`) for all backend runtime connections
+- Least-privilege Postgres role (`app_user`) for all backend runtime
+  connections, provisioned idempotently by `postgres_app_user_init` on every
+  startup
 - Corrected `Makefile` (decoupled routine builds from full cache resets)

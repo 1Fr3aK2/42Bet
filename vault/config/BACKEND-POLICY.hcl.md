@@ -57,8 +57,8 @@ grant access to them unless explicitly extended.
 | `secret/data/jwt` | `JWT_SECRET` (token signing) | `backend` |
 
 > **Note (S9 hardening):** `secret/data/postgres` now holds the credentials
-> of `app_user`, a least-privilege database role created by
-> `postgres/init/01-app-user.sh` (`SELECT`/`INSERT`/`UPDATE`/`DELETE` on
+> of `app_user`, a least-privilege database role provisioned idempotently by
+> the `postgres_app_user_init` service (`SELECT`/`INSERT`/`UPDATE`/`DELETE` on
 > application tables only — no DDL, no role creation, no external-program
 > `COPY`), not the `POSTGRES_USER` superuser's. The path and the field names
 > (`user`, `password`) are unchanged — only the value stored at that path
