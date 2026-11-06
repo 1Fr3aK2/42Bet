@@ -6,6 +6,7 @@ import {
   IsOptional,
   IsPositive,
   IsString,
+  MaxLength,
   Max,
   Min,
   Matches,
@@ -14,6 +15,7 @@ import {
 export class SearchPostsDto {
   @IsOptional()                   // Skips validation if the value is null or undefined (class-validator)
   @IsString()
+  @MaxLength(100)                 // Limits the search term to a maximum of 100 characters
   search?: string;                // ? indicates that the property is optional in TypeScript
 
   @IsOptional()

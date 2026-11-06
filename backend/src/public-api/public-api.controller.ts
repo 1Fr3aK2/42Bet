@@ -1,51 +1,51 @@
 import { Body, Controller, Delete, Get, Param, Post, Put, Patch, Query, UseGuards } from '@nestjs/common';
 import { UsersService } from '../users/users.service';
-import { UpdateUserRoleDto } from '../users/update-user-role.dto';
 import { ForumService } from '../forum/forum.service';
-import { ManualModerationService } from '../moderation/manual-moderation.service';
-import { ResolveReportDto } from '../moderation/dto/resolve-report.dto';
-import { AdminApiKeyGuard } from './admin-api-key.guard';
 import { AdminIdentityService } from './admin-identity.service';
+import { ManualModerationService } from '../moderation/manual-moderation.service';
 import { CreatePostDto } from '../forum/dto/create-post.dto';
+import { ResolveReportDto } from '../moderation/dto/resolve-report.dto';
+import { UpdateUserRoleDto } from '../users/update-user-role.dto';
+import { AdminApiKeyGuard } from './admin-api-key.guard';
 import { AdminApiRateLimitGuard } from './admin-api-rate-limit.guard';
 import {
+  ApiTags,
+  ApiSecurity,
   ApiOperation,
+  ApiResponse,
   ApiParam,
   ApiQuery,
-  ApiResponse,
-  ApiSecurity,
-  ApiTags,
 } from '@nestjs/swagger';
 
-@ApiTags('Public Admin API')
-@ApiSecurity('admin-api-key')
-@UseGuards(AdminApiKeyGuard, AdminApiRateLimitGuard)
-@Controller('api/admin')
+@ApiTags('Public Admin API')                            // Groups endpoints under "Public Admin API" in the Swagger documentation
+@ApiSecurity('admin-api-key')                           // Indicates that endpoints use the "admin-api-key" security scheme in the OpenAPI documentation
+@UseGuards(AdminApiKeyGuard, AdminApiRateLimitGuard)    // A NestJS Guard determines whether a request can proceed to the handler
+@Controller('api/admin')                                // Identifies this class as a NestJS controller and defines the route prefix
 export class PublicApiController {
 
-  constructor(
-    private readonly usersService: UsersService,
-    private readonly forumService: ForumService,
+  constructor(                                         //Dependency Injection (DI)
+    private readonly usersService: UsersService,          // private: restricts direct access to the property to within the class (TypeScript access control)
+    private readonly forumService: ForumService,          // readonly: prevents reassignment of the property (TypeScript compile-time enforcement)
     private readonly manualModerationService: ManualModerationService,
     private readonly adminIdentityService: AdminIdentityService,
   ) {}
 
-  @ApiOperation({ summary: 'List all users' })
-  @ApiResponse({ status: 200, description: 'Users retrieved successfully' })
+  @ApiOperation({ summary: 'List all users' })                                  // Describes the operation in Swagger documentation
+  @ApiResponse({ status: 200, description: 'Users retrieved successfully' })    // Documents the HTTP 200 response (does not generate it)
   @Get('users')
   getUsers() {
     return this.usersService.findAll();
   }
 
   @ApiOperation({ summary: 'Update a user role' })
-  @ApiParam({
+  @ApiParam({             // Documents the 'id' route parameter as a number in Swagger (does not validate or convert it)
     name: 'id',
     type: Number,
   })
   @ApiResponse({ status: 200, description: 'User role updated successfully' })
   @ApiResponse({ status: 400, description: 'Invalid role or ADMIN role cannot be changed' })
   @ApiResponse({ status: 404, description: 'User not found' })
-  @Put('users/:id/role')
+  @Put('users/:id/role')                                          // :id is a dynamic route parameter
   updateUserRole(
     @Param('id') id: string,
     @Body() updateUserRoleDto: UpdateUserRoleDto,
@@ -57,9 +57,9 @@ export class PublicApiController {
   }
 
   @ApiOperation({ summary: 'List moderation reports' })
-  @ApiQuery({
+  @ApiQuery({                                                 // Documents the query parameter in Swagger (does not validate it)
     name: 'status',
-    required: false,
+    required: false,                                          // Indicates that the parameter is optional
     description: 'Filter reports by status',
   })
   @ApiResponse({ status: 200, description: 'Reports retrieved successfully' })

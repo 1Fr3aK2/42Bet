@@ -83,6 +83,7 @@ export default function ForumPage({ token, currentUser, onClose }) {
           type="text"
           placeholder="Search posts..."
           aria-label="Search posts"
+          maxLength={100}
           value={search}
           onChange={(e) => { setPage(1); setSearch(e.target.value); }}
         />

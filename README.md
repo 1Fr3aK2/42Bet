@@ -1,6 +1,4 @@
-*This project has been created as part of the 42 curriculum by mcarepa-, &lt;hugo-login&gt;, &lt;pedro-login&gt;, raamorim, dsteiger;.*
-
-<!-- TODO(team): replace the four placeholders above with the 42 logins. -->
+*This project has been created as part of the 42 curriculum by mcarepa-, hugo-mar, pesilva-, raamorim, dsteiger.*
 
 # Transcendence
 

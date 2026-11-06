@@ -126,13 +126,13 @@ export class UsersService {
 		updatedAt: true,
 	  },
 	});
-  
+
 	if (!user) {
 	  throw new NotFoundException(
 		`User with id ${userId} not found`,
 	  );
 	}
-  
+
 	return user;
   }
 

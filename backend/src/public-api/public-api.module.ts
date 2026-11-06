@@ -18,6 +18,10 @@ import { AdminApiRateLimitGuard } from './admin-api-rate-limit.guard';
     ModerationModule,
   ],
   controllers: [PublicApiController],
-  providers: [AdminApiKeyGuard, AdminIdentityService, AdminApiRateLimitGuard],
+  providers: [          // Registers three components in NestJS's dependency injection system
+    AdminApiKeyGuard,           // Controls access using an API key
+    AdminIdentityService,       // Manages the administrative identity used in API operations
+    AdminApiRateLimitGuard,     // Controls the frequency of API requests
+  ],
 })
 export class PublicApiModule {}

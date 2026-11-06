@@ -29,6 +29,14 @@ async function main() {
     return;
   }
 
+  // bcrypt: Library for securely hashing passwords.
+  // Hash: A one-way transformation that allows password verification
+  //       without storing the original password.
+  // Salt: A random value generated for each password, ensuring that
+  //       identical passwords produce different hashes.
+  //       bcrypt automatically generates and stores the salt within the hash.
+  // 10: Cost factor (salt rounds), meaning 2^10 = 1024 iterations of bcrypt's
+  //     key setup process. Higher values increase security but also processing time.
   const hashedPassword = await bcrypt.hash(password, 10);
 
   const admin = await prisma.user.create({
@@ -43,11 +51,14 @@ async function main() {
   console.log(`Admin created: ${admin.username}`);
 }
 
+// Executes the main seed function (which returns a Promise).
 main()
   .catch((error) => {
+    // Runs if main() fails: logs the error and terminates the process with exit code 1 (failure).
     console.error(error);
     process.exit(1);
   })
   .finally(async () => {
+    // Runs after main() succeeds or fails, closing the Prisma database connection.
     await prisma.$disconnect();
   });

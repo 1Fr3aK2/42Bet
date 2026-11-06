@@ -2,7 +2,7 @@ import { IsIn, IsOptional, IsString, MaxLength } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class ResolveReportDto {
-  @ApiProperty({
+  @ApiProperty({                  // Documents the property in Swagger, specifying possible values and an example
     enum: ['dismiss', 'remove'],
     example: 'dismiss',
   })
@@ -10,7 +10,7 @@ export class ResolveReportDto {
   @IsIn(['dismiss', 'remove'])
   action: string;
 
-  @ApiPropertyOptional({
+  @ApiPropertyOptional({          // Documents an optional property in Swagger, specifying an example and maximum length
     example: 'Report reviewed.',
     maxLength: 500,
   })

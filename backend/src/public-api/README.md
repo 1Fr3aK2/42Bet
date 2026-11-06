@@ -30,7 +30,7 @@ X-API-Key: <api-key>
 
 The guard reads the expected key from `ADMIN_API_KEY`.
 
-Instead of directly comparing the two strings, both keys are hashed with SHA-256 and compared using Node.js `timingSafeEqual()`.
+The guard compares the provided API key directly with the configured `ADMIN_API_KEY` value.
 
 Missing or invalid API keys return HTTP `401 Unauthorized`.
 
@@ -118,8 +118,8 @@ This protects the backend from excessive requests coming from a single client IP
 Current configuration:
 
 ```text
-Key:    admin_api_requests:<client IP>
-Limit:  100 requests
+Key:    admin_api_requests:<client-ip>
+Limit:  100 requests per IP
 Window: 60 seconds
 Status: HTTP 429 when exceeded
 ```
@@ -128,6 +128,7 @@ The guard calls:
 
 ```typescript
 const clientIp = (request.headers['x-real-ip'] as string) || request.ip;
+
 await this.rateLimiterService.checkLimit(
   `admin_api_requests:${clientIp}`,
   100,
@@ -287,7 +288,7 @@ nginx/template/default.conf.template
 
 - The Public API uses a separate API-key authentication mechanism from the frontend JWT authentication.
 - API keys are not hardcoded in the application source code.
-- API-key comparison uses SHA-256 hashes and `timingSafeEqual()`.
+- API-key authentication validates the provided key against the server-side `ADMIN_API_KEY` environment variable.
 - The configured administrator is resolved from the database instead of using a hardcoded user ID.
 - `AdminIdentityService` verifies that the configured database user has the `ADMIN` role.
 - Existing application validation, moderation and ownership rules are reused where applicable.

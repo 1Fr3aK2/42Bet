@@ -5,38 +5,27 @@ import {
   InternalServerErrorException,
   UnauthorizedException,
 } from '@nestjs/common';
-import { createHash, timingSafeEqual } from 'crypto';
 
 @Injectable()
 export class AdminApiKeyGuard implements CanActivate {
-  canActivate(context: ExecutionContext): boolean {
-    const expectedKey = process.env.ADMIN_API_KEY;
+
+  // Automatically called by NestJS to determine whether the request is authorized
+  canActivate(context: ExecutionContext): boolean {           // CanActivate is a NestJS interface that defines the guard contract, requiring the canActivate() method
+    const expectedKey = process.env.ADMIN_API_KEY;            // Reads the expected API key from environment variables
 
     if (!expectedKey) {
-      throw new InternalServerErrorException(
+      throw new InternalServerErrorException(                 // HTTP 500: required configuration is missing
         'Admin API key is not configured',
       );
     }
 
-    const request = context.switchToHttp().getRequest();
-    const providedKey = request.headers['x-api-key'];
+    const request = context.switchToHttp().getRequest();      // Gets the current HTTP request
+    const providedKey = request.headers['x-api-key'];         // Extracts the API key from the request header
 
-    if (typeof providedKey !== 'string') {
+    if (providedKey !== expectedKey) {
       throw new UnauthorizedException('Invalid API key');
     }
 
-    const providedHash = createHash('sha256')
-      .update(providedKey)
-      .digest();
-
-    const expectedHash = createHash('sha256')
-      .update(expectedKey)
-      .digest();
-
-    if (!timingSafeEqual(providedHash, expectedHash)) {
-      throw new UnauthorizedException('Invalid API key');
-    }
-
-    return true;
+    return true;                                              // API key is valid: allows the request to proceed
   }
 }
