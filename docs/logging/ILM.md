@@ -5,7 +5,7 @@
 This project's Logs module (ELK — Elasticsearch, Logstash, Kibana, Filebeat) ships
 two kinds of daily indices into Elasticsearch:
 
-- `transcendence-logs-YYYY.MM.dd` — general application/container logs collected
+- `42bet-logs-YYYY.MM.dd` — general application/container logs collected
   by Filebeat via Docker autodiscover and shipped through Logstash.
 - `waf-audit-YYYY.MM.dd` — structured ModSecurity (WAF) audit log entries, parsed
   by a dedicated Logstash pipeline (source IP, HTTP method, URI, status code, rule
@@ -28,7 +28,7 @@ created, it is attached to indices either directly or — more commonly — thro
 an **index template**, so that any new index whose name matches a given pattern
 is automatically placed under that policy without any manual step.
 
-## The policy used in this project: `transcendence-logs-policy`
+## The policy used in this project: `42bet-logs-policy`
 
 ```json
 {
@@ -74,16 +74,16 @@ queryable in Kibana throughout it.
 
 ## Index templates
 
-Two index templates apply `transcendence-logs-policy` automatically to any new
+Two index templates apply `42bet-logs-policy` automatically to any new
 index matching each pattern:
 
-**`transcendence-logs-template`**
+**`42bet-logs-template`**
 ```json
 {
-  "index_patterns": ["transcendence-logs-*"],
+  "index_patterns": ["42bet-logs-*"],
   "template": {
     "settings": {
-      "index.lifecycle.name": "transcendence-logs-policy"
+      "index.lifecycle.name": "42bet-logs-policy"
     }
   }
 }
@@ -95,7 +95,7 @@ index matching each pattern:
   "index_patterns": ["waf-audit-*"],
   "template": {
     "settings": {
-      "index.lifecycle.name": "transcendence-logs-policy"
+      "index.lifecycle.name": "42bet-logs-policy"
     }
   }
 }
@@ -127,7 +127,7 @@ elasticsearch_ilm_init:
   container_name: elasticsearch_ilm_init
   image: docker.elastic.co/elasticsearch/elasticsearch:8.19.18
   networks:
-    - transcendence
+    - 42bet
   environment:
     ELASTIC_PASSWORD: "${ELASTIC_PASSWORD}"
   entrypoint: ["/bin/sh"]
@@ -145,10 +145,10 @@ order:
 
 1. Waits for Elasticsearch to respond to an authenticated health check (it may
    still be starting up when this service is scheduled).
-2. Creates (or updates) the `transcendence-logs-policy` ILM policy.
-3. Creates (or updates) the `transcendence-logs-template` index template.
+2. Creates (or updates) the `42bet-logs-policy` ILM policy.
+3. Creates (or updates) the `42bet-logs-template` index template.
 4. Creates (or updates) the `waf-audit-template` index template.
-5. Applies the policy directly to any `transcendence-logs-*` indices that
+5. Applies the policy directly to any `42bet-logs-*` indices that
    already exist, using `ignore_unavailable=true` so the request does not fail
    if no such index exists yet.
 6. Does the same for any pre-existing `waf-audit-*` indices.
@@ -166,11 +166,11 @@ would be picked up correctly by the templates.
 - **Steps 5 and 6 are separated into two independent calls**, each scoped to a
   single index pattern with `ignore_unavailable=true`. An earlier version tried
   to apply the settings update to both patterns in a single call
-  (`transcendence-logs-*,waf-audit-*`). Elasticsearch requires *every* comma
+  (`42bet-logs-*,waf-audit-*`). Elasticsearch requires *every* comma
   separated pattern in such a request to resolve to at least one index by
   default; since `waf-audit-*` did not exist yet at the time (no WAF-triggering
   traffic had occurred since the last rebuild), the entire request — including
-  the `transcendence-logs-*` part, which did have a match — was rejected with a
+  the `42bet-logs-*` part, which did have a match — was rejected with a
   404, and the existing index was silently left unmanaged. Splitting the calls
   and adding `ignore_unavailable=true` to each makes the script correct whether
   zero, one, or both index families currently exist.
@@ -199,10 +199,10 @@ A managed index returns something like:
 ```json
 {
   "indices": {
-    "transcendence-logs-2026.09.29": {
-      "index": "transcendence-logs-2026.09.29",
+    "42bet-logs-2026.09.29": {
+      "index": "42bet-logs-2026.09.29",
       "managed": true,
-      "policy": "transcendence-logs-policy",
+      "policy": "42bet-logs-policy",
       "phase": "hot",
       "action": "rollover",
       "step": "check-rollover-ready"
@@ -221,11 +221,11 @@ To inspect the policy and templates themselves:
 ```bash
 docker compose exec elasticsearch sh -c \
   'curl -s -u "elastic:$ELASTIC_PASSWORD" \
-   http://localhost:9200/_ilm/policy/transcendence-logs-policy?pretty'
+   http://localhost:9200/_ilm/policy/42bet-logs-policy?pretty'
 
 docker compose exec elasticsearch sh -c \
   'curl -s -u "elastic:$ELASTIC_PASSWORD" \
-   http://localhost:9200/_index_template/transcendence-logs-template?pretty'
+   http://localhost:9200/_index_template/42bet-logs-template?pretty'
 
 docker compose exec elasticsearch sh -c \
   'curl -s -u "elastic:$ELASTIC_PASSWORD" \
