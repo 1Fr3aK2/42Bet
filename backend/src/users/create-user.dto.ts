@@ -9,10 +9,12 @@ import {
 
 export class CreateUserDto {
   @IsString()
+  @MaxLength(18)
   @Matches(USERNAME_PATTERN, { message: USERNAME_MESSAGE })
   username: string;
 
   @IsEmail()
+  @MaxLength(30)
   email: string;
 
   @IsString()
@@ -21,6 +23,7 @@ export class CreateUserDto {
 
   // Ignored: the server sets the starting balance (see users.service.ts).
   // Still accepted because the current registration form sends it.
+  @MaxLength(18)
   @IsOptional()
   @IsNumber()
   wallet?: number;

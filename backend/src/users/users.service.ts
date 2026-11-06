@@ -185,6 +185,21 @@ export class UsersService {
 	  throw error;
 	}
   }
+  async deleteUser(userId: number) {
+    try {
+        await this.prisma.user.delete({
+            where: { id: userId },
+        });
+
+        return { message: 'User deleted successfully' };
+    } catch (error) {
+        if (error.code === 'P2025') {
+            throw new NotFoundException('User not found');
+        }
+
+        throw error;
+    }
+}
   async updatePassword(
 	userId: number,
 	updatePasswordDto: UpdatePasswordDto,
