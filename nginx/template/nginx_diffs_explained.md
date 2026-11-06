@@ -54,7 +54,7 @@ docker logs nginx 2>&1 | tail -5
 ```
 ---
 ## As Alterações Realizadas
-### Ficheiro 1: [default.conf.template](file:///wsl.localhost/Ubuntu-22.04/home/rafael/git/42/Transcendence/nginx/template/default.conf.template)
+### Ficheiro 1: [default.conf.template](file:///wsl.localhost/Ubuntu-22.04/home/rafael/git/42/42Bet/nginx/template/default.conf.template)
 #### Alteração A — Resolver DNS do Docker
 Adicionámos o resolver do Docker no bloco `server {}` de HTTPS:
 ```diff
@@ -231,7 +231,7 @@ location /health {
 }
 ```
 ---
-### Ficheiro 2: [README.md](file:///wsl.localhost/Ubuntu-22.04/home/rafael/git/42/Transcendence/nginx/template/README.md)
+### Ficheiro 2: [README.md](file:///wsl.localhost/Ubuntu-22.04/home/rafael/git/42/42Bet/nginx/template/README.md)
 O README foi atualizado para documentar esta correção:
 1. **Nova secção "DNS resolution"** — explica o `resolver` e o porquê das variáveis
 2. **Todos os code blocks atualizados** — agora mostram `$upstream_*` em vez de hostnames estáticos
