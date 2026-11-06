@@ -1,6 +1,6 @@
 # Public Admin API
 
-Public administrative API for the Transcendence project.
+Public administrative API for the 42Bet project.
 
 This module provides an external REST API for interacting with application data and moderation features. It is separate from the JWT-authenticated API used by the frontend and is protected by an API key.
 
@@ -180,7 +180,7 @@ const document = SwaggerModule.createDocument(
 );
 ```
 
-This means that the documentation describes the Public Admin API rather than every endpoint in the Transcendence backend.
+This means that the documentation describes the Public Admin API rather than every endpoint in the 42Bet backend.
 
 Swagger also allows the API key to be entered using the **Authorize** button and then used when testing protected endpoints.
 
@@ -298,7 +298,7 @@ nginx/template/default.conf.template
 
 ## Known simplifications
 
-This API is designed for the Transcendence project environment rather than a production deployment.
+This API is designed for the 42Bet project environment rather than a production deployment.
 
 In particular:
 

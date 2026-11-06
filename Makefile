@@ -4,7 +4,7 @@ SCRIPT_CERTS  = ./scripts/setup-certs.sh
 # Alvo principal (por omissão)
 all: check-env certs build up
 	@echo "=========================================================="
-	@echo "  Transcendence is up and running!                        "
+	@echo "  42Bet is up and running!                                "
 	@echo "  URL: https://localhost                                  "
 	@echo "=========================================================="
 
@@ -69,7 +69,7 @@ update: check-env certs
 	@echo "Rebuilding and updating containers..."
 	@$(COMPOSE) build
 	@$(COMPOSE) up -d --remove-orphans
-	@echo "Transcendence updated!"
+	@echo "42Bet updated!"
 
 # 7. Modo dev local opcional (fora do Docker, se necessário)
 dev:
@@ -78,12 +78,12 @@ dev:
 
 
 clean:
-	@echo "Stopping Transcendence containers..."
+	@echo "Stopping 42Bet containers..."
 	@$(COMPOSE) down
 
 
 fclean:
-	@echo "Full cleaning Transcendence (containers, volumes, images, certs, backups)..."
+	@echo "Full cleaning 42Bet (containers, volumes, images, certs, backups)..."
 	@$(COMPOSE) down -v --rmi all --remove-orphans
 	@docker run --rm -v "$(CURDIR)/backups:/backups" alpine sh -c "rm -rf /backups/* /backups/.[!.]* 2>/dev/null || true"
 	@rm -rf nginx/certs/ vault/certs/ backups/ backend/dist/

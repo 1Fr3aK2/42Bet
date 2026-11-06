@@ -38,7 +38,7 @@ async function bootstrap() {
   // and every request made from the Swagger UI will then include that header.
   // All actual endpoints are still protected by AdminApiKeyGuard.
   const config = new DocumentBuilder()                                                  // Builds the OpenAPI configuration used to generate the Swagger documentation
-    .setTitle('Transcendence Public Admin API')                                         // Sets the API documentation title
+    .setTitle('42Bet Public Admin API')                                                 // Sets the API documentation title
     .setDescription(                                                                    // Sets the API description
       'Public administrative API for managing users, forum content and moderation.',
     )

@@ -37,7 +37,7 @@ docker inspect backend --format '{{range .NetworkSettings.Networks}}{{.IPAddress
 docker compose stop backend
 docker compose rm -f backend
 # 4. "Roubar" o IP antigo com um contentor dummy para forçar um IP diferente
-docker run -d --name ladrao_de_ip --network transcendence_transcendence alpine sleep 3600
+docker run -d --name ladrao_de_ip --network 42bet_42Bet alpine sleep 3600
 # 5. Recriar o backend (vai receber um IP diferente)
 docker compose up -d --no-deps backend
 # 6. Verificar que o IP mudou
@@ -54,7 +54,7 @@ docker logs nginx 2>&1 | tail -5
 ```
 ---
 ## As Alterações Realizadas
-### Ficheiro 1: [default.conf.template](file:///wsl.localhost/Ubuntu-22.04/home/rafael/git/42/Transcendence/nginx/template/default.conf.template)
+### Ficheiro 1: [default.conf.template](file:///wsl.localhost/Ubuntu-22.04/home/rafael/git/42/42Bet/nginx/template/default.conf.template)
 #### Alteração A — Resolver DNS do Docker
 Adicionámos o resolver do Docker no bloco `server {}` de HTTPS:
 ```diff
@@ -231,7 +231,7 @@ location /health {
 }
 ```
 ---
-### Ficheiro 2: [README.md](file:///wsl.localhost/Ubuntu-22.04/home/rafael/git/42/Transcendence/nginx/template/README.md)
+### Ficheiro 2: [README.md](file:///wsl.localhost/Ubuntu-22.04/home/rafael/git/42/42Bet/nginx/template/README.md)
 O README foi atualizado para documentar esta correção:
 1. **Nova secção "DNS resolution"** — explica o `resolver` e o porquê das variáveis
 2. **Todos os code blocks atualizados** — agora mostram `$upstream_*` em vez de hostnames estáticos
@@ -278,7 +278,7 @@ curl -k https://localhost/health
 # ✅ {"status":"up",...}
 # 3. Forçar mudança de IP do backend (mesmo teste de antes)
 docker compose stop backend && docker compose rm -f backend
-docker run -d --name ladrao_de_ip --network transcendence_transcendence alpine sleep 3600
+docker run -d --name ladrao_de_ip --network 42bet_42Bet alpine sleep 3600
 docker compose up -d --no-deps backend
 # 4. Esperar ~15 segundos para o backend ficar healthy
 # 5. Testar — AGORA FUNCIONA!

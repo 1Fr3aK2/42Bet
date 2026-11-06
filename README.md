@@ -1,10 +1,10 @@
 *This project has been created as part of the 42 curriculum by mcarepa-, hugo-mar, pesilva-, raamorim, dsteiger.*
 
-# Transcendence
+# 42Bet
 
 ## Description
 
-**Transcendence** is a real-time crypto price prediction game with a community
+**42Bet** is a real-time crypto price prediction game with a community
 forum. Players bet a virtual currency (**T€**) on whether the price of **Bitcoin**
 or **Ethereum** will go **up** or **down** in the next 60 seconds. Prices come
 live from the Kraken exchange, and the server records the prices and settles
@@ -59,8 +59,8 @@ default, deployed with a single command, and observable in production.
 ### 1. Configure the environment
 
 ```bash
-git clone <repository-url> transcendence
-cd transcendence
+git clone <repository-url> 42Bet
+cd 42Bet
 cp .env.example .env
 ```
 

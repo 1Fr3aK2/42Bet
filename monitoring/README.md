@@ -1,7 +1,7 @@
 # Monitoring Stack (Prometheus + Grafana)
 
 This document describes the observability setup implemented for the Devops module
-("Monitoring system with Prometheus and Grafana") of `ft_transcendence`.
+("Monitoring system with Prometheus and Grafana") of `42Bet`.
 
 ## Overview
 

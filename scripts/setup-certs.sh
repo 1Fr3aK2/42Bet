@@ -33,7 +33,7 @@ else
     # 1. Gerar CA interna
     openssl req -x509 -nodes -new -sha256 -days 365 -newkey rsa:2048 \
         -keyout vault/certs/ca.key -out vault/certs/ca.pem \
-        -subj "/CN=TranscendenceCA"
+        -subj "/CN=42BetCA"
 
     # 2. Gerar Certificado do Nginx com SAN
     openssl req -new -nodes -newkey rsa:2048 \

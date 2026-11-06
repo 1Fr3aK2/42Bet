@@ -137,7 +137,7 @@ export default function AnalyticsDashboard() {
     } catch {
       username = undefined;
     }
-    download(textToPdf(reportLines({ data, filters, username })), `transcendence-analytics-${fileDate}.pdf`);
+    download(textToPdf(reportLines({ data, filters, username })), `42Bet-analytics-${fileDate}.pdf`);
   }
 
   let body;
@@ -167,11 +167,11 @@ export default function AnalyticsDashboard() {
           {token && <span className={`analytics-live ${live ? 'on' : ''}`}>{live ? 'Live' : 'Offline'}</span>}
           <div className="analytics-exports" role="group" aria-label="Export">
             <button className="analytics-button" disabled={!data || !token}
-              onClick={() => download(betsToCsv(data.bets), `transcendence-bets-${fileDate}.csv`, 'text/csv')}>
+              onClick={() => download(betsToCsv(data.bets), `42Bet-bets-${fileDate}.csv`, 'text/csv')}>
               Export CSV
             </button>
             <button className="analytics-button" disabled={!data || !token}
-              onClick={() => download(JSON.stringify({ filters, ...data }, null, 2), `transcendence-analytics-${fileDate}.json`, 'application/json')}>
+              onClick={() => download(JSON.stringify({ filters, ...data }, null, 2), `42Bet-analytics-${fileDate}.json`, 'application/json')}>
               Export JSON
             </button>
             <button className="analytics-button" disabled={!data || !token} onClick={exportPdf}>Export PDF</button>

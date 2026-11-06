@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ============================================================
-# Transcendence analytics - end-to-end test
+# 42Bet analytics - end-to-end test
 # ============================================================
 #
 # Creates a user, places 4 bets, settles them and checks GET

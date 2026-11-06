@@ -1,4 +1,4 @@
-# Rate Limit & Brute-Force Testing Report — ft_transcendence
+# Rate Limit & Brute-Force Testing Report — 42Bet
 
 ## Context
 

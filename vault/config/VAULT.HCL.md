@@ -66,7 +66,7 @@ by `setup-certs.sh` (see that script's own documentation), issued for the
 reach the container through the `./vault/certs` bind mount.
 
 The port is not published to the host: Vault is only reachable from other
-containers on the `transcendence` network.
+containers on the `42Bet` network.
 
 ### `api_addr` / `cluster_addr`
 

@@ -47,7 +47,7 @@ export function reportLines({ data, filters, username }) {
   const s = data.summary;
   const rate = (r) => (r === null ? '-' : `${r} %`);
   return [
-    'Transcendence - betting analytics',
+    '42Bet - betting analytics',
     '',
     `User:       ${username ?? '-'}`,
     `Period:     ${filters.from || 'first bet'} to ${filters.to || 'today'}`,

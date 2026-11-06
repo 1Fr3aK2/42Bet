@@ -7,7 +7,7 @@ structured, searchable fields, and routes everything to Elasticsearch in two
 families of daily indices:
 
 - `waf-audit-YYYY.MM.dd`: the parsed ModSecurity audit events.
-- `transcendence-logs-YYYY.MM.dd`: all the other logs (everything that is not
+- `42bet-logs-YYYY.MM.dd`: all the other logs (everything that is not
   tagged as a WAF audit event). These are forwarded unchanged.
 
 ## Why it was needed
@@ -92,7 +92,7 @@ correctly. All other events skip the filter block entirely.
 
 Two Elasticsearch outputs chosen by a conditional: WAF audit events go to
 `waf-audit-%{+YYYY.MM.dd}`, everything else to
-`transcendence-logs-%{+YYYY.MM.dd}`. 
+`42bet-logs-%{+YYYY.MM.dd}`. 
 Both authenticate using the dedicated least-privilege user `logstash_writer` 
 (provisioned by `elasticsearch_ilm_init`) with `manage_template => false` so 
 that index lifecycle management (ILM) and templates are managed exclusively 
@@ -116,7 +116,7 @@ by cluster policies. The date in the index name creates **one index per day**.
 ## Relationship with the ILM policy
 
 The index names above are what the index templates created by `ilm-init.sh`
-match (`waf-audit-*` and `transcendence-logs-*`). That is how new daily indices
+match (`waf-audit-*` and `42bet-logs-*`). That is how new daily indices
 receive the retention policy automatically.
 
 However, these are plain daily indices: the output sets no rollover alias and

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ============================================================
-# Transcendence betting engine - end-to-end test
+# 42Bet betting engine - end-to-end test
 # ============================================================
 #
 # Creates two users and checks the betting engine (backend/src/bets)

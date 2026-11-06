@@ -4,7 +4,7 @@ services:
     build:
       context: ./backend
     networks:
-      - transcendence
+      - 42Bet
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?schema=public
     depends_on:
@@ -18,7 +18,7 @@ services:
     build:
       context: ./backend
     networks:
-      - transcendence
+      - 42Bet
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?schema=public
       VAULT_ADDR: ${VAULT_ADDR}
@@ -40,7 +40,7 @@ services:
     build:
       context: ./backend
     networks:
-      - transcendence
+      - 42Bet
     environment:
       POSTGRES_DB: ${POSTGRES_DB}
       VAULT_ADDR: ${VAULT_ADDR}
@@ -76,7 +76,7 @@ services:
     build:
       context: ./frontend
     networks:
-      - transcendence
+      - 42Bet
     depends_on:
       backend:
         condition: service_healthy
@@ -101,7 +101,7 @@ services:
     container_name: nginx
     image: owasp/modsecurity-crs:4-nginx-202606261106
     networks:
-      - transcendence
+      - 42Bet
     ports:
       - "443:8443"
       - "80:8080"
@@ -132,7 +132,7 @@ services:
       SSL_CERT_KEY_FILE: /etc/nginx/certs/nginx.key
       SSL_PORT: 8443
       PORT: 8080
-      SERVER_NAME: Transcendence
+      SERVER_NAME: 42Bet
       SSL_PROTOCOLS: TLSv1.2 TLSv1.3
       PARANOIA: "2"
       BLOCKING_PARANOIA: "2"
@@ -144,7 +144,7 @@ services:
     container_name: nginx_exporter
     image: nginx/nginx-prometheus-exporter
     networks:
-      - transcendence
+      - 42Bet
     command:
       - "-nginx.scrape-uri=http://nginx:8080/stub_status"
     depends_on:
@@ -162,7 +162,7 @@ services:
     container_name: vault
     image: hashicorp/vault
     networks:
-      - transcendence
+      - 42Bet
     environment:
       VAULT_ADDR: ${VAULT_ADDR}
       VAULT_CACERT: ${VAULT_CACERT}
@@ -204,7 +204,7 @@ services:
     container_name: vault_init
     image: hashicorp/vault
     networks:
-      - transcendence
+      - 42Bet
     environment:
       VAULT_ADDR: ${VAULT_ADDR}
       VAULT_CACERT: ${VAULT_CACERT}
@@ -235,7 +235,7 @@ services:
     container_name: grafana
     image: grafana/grafana
     networks:
-      - transcendence
+      - 42Bet
     environment:
       GF_SECURITY_ADMIN_USER: ${GF_SECURITY_ADMIN_USER}
       GF_SECURITY_ADMIN_PASSWORD: ${GF_SECURITY_ADMIN_PASSWORD}
@@ -260,7 +260,7 @@ services:
     container_name: prometheus
     image: prom/prometheus
     networks:
-      - transcendence
+      - 42Bet
     volumes:
       - prometheus-data:/var/lib/prometheus/data
       - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
@@ -286,7 +286,7 @@ services:
     image: redis
     command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD}
     networks:
-      - transcendence
+      - 42Bet
     volumes:
       - redis-data:/data
     healthcheck:
@@ -301,7 +301,7 @@ services:
     container_name: redis_exporter
     image: oliver006/redis_exporter
     networks:
-      - transcendence
+      - 42Bet
     environment:
       REDIS_ADDR: redis:6379
       REDIS_PASSWORD: ${REDIS_PASSWORD}
@@ -314,7 +314,7 @@ services:
     container_name: postgres
     image: postgres:16
     networks:
-      - transcendence
+      - 42Bet
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
@@ -333,7 +333,7 @@ services:
     container_name: postgres_backup
     image: postgres:16
     networks:
-      - transcendence
+      - 42Bet
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
@@ -357,7 +357,7 @@ services:
     container_name: postgres_exporter
     image: prometheuscommunity/postgres-exporter
     networks:
-      - transcendence
+      - 42Bet
     environment:
       DATA_SOURCE_NAME: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
     depends_on:
@@ -375,7 +375,7 @@ services:
     container_name: elasticsearch
     image: docker.elastic.co/elasticsearch/elasticsearch:8.19.18
     networks:
-      - transcendence
+      - 42Bet
     environment:
       discovery.type: single-node
       xpack.security.enabled: "true"
@@ -403,7 +403,7 @@ services:
     container_name: logstash
     image: docker.elastic.co/logstash/logstash:8.19.18
     networks:
-      - transcendence
+      - 42Bet
     environment:
       LS_JAVA_OPTS: "-Xms256m -Xmx256m"
       ELASTIC_PASSWORD: "${ELASTIC_PASSWORD}"
@@ -422,7 +422,7 @@ services:
     container_name: kibana_user_init
     image: docker.elastic.co/elasticsearch/elasticsearch:8.19.18
     networks:
-      - transcendence
+      - 42Bet
     environment:
       ELASTIC_PASSWORD: "${ELASTIC_PASSWORD}"
       KIBANA_PASSWORD: "${KIBANA_PASSWORD}"
@@ -442,7 +442,7 @@ services:
     container_name: elasticsearch_ilm_init
     image: docker.elastic.co/elasticsearch/elasticsearch:8.19.18
     networks:
-      - transcendence
+      - 42Bet
     environment:
       ELASTIC_PASSWORD: "${ELASTIC_PASSWORD}"
     entrypoint: ["/bin/sh"]
@@ -457,7 +457,7 @@ services:
     container_name: kibana
     image: docker.elastic.co/kibana/kibana:8.19.18
     networks:
-      - transcendence
+      - 42Bet
     environment:
       ELASTICSEARCH_HOSTS: '["http://elasticsearch:9200"]'
       ELASTICSEARCH_USERNAME: "kibana_system"
@@ -484,7 +484,7 @@ services:
       context: ./logging/filebeat
     user: root
     networks:
-      - transcendence
+      - 42Bet
     volumes:
       - /var/lib/docker/containers:/var/lib/docker/containers:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
@@ -508,5 +508,5 @@ volumes:
   modsec-audit-log:
 
 networks:
-  transcendence:
+  42Bet:
     driver: bridge
