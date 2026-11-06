@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ============================================================
-# Transcendence forum - end-to-end test of the final-version fixes
+# 42Bet forum - end-to-end test of the final-version fixes
 # ============================================================
 #
 # Checks, through nginx and the WAF:
