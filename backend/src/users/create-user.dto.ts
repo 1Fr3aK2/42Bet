@@ -14,16 +14,16 @@ export class CreateUserDto {
   username: string;
 
   @IsEmail()
-  @MaxLength(30)
+  @MaxLength(40)
   email: string;
 
   @IsString()
+  @MaxLength(30)
   @MinLength(8)
   password: string;
 
   // Ignored: the server sets the starting balance (see users.service.ts).
   // Still accepted because the current registration form sends it.
-  @MaxLength(18)
   @IsOptional()
   @IsNumber()
   wallet?: number;
