@@ -384,6 +384,10 @@ to end, not assumed:
 - Kibana: before the `942440` exclusion, logging in to Kibana, visiting
   Grafana and returning to Kibana ended in `403` on `GET /kibana/spaces/enter`
   (audit log: only rule `942440` matched, on `REQUEST_COOKIES:sid`).
+  After the exclusion, the same flow with repeated reloads gave no `403` on
+  any `/kibana` path and no new `942440` entries in `audit.log`; a real
+  `'--` in a query argument (`/crypto/BTC/candles?interval=1'--`) is still
+  `403` and still logs `942440`.
 
 ## How to test
 
@@ -475,5 +479,5 @@ to end, not assumed:
       fields only
 - [x] Kibana `sid` cookie exclusion added to `exclusions.conf` (`942440`,
       `REQUEST_COOKIES:sid` only)
-- [ ] Kibana → Grafana → Kibana flow re-tested after the exclusion (step 8
+- [x] Kibana → Grafana → Kibana flow re-tested after the exclusion (step 8
       of *How to test*)
