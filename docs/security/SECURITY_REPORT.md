@@ -254,7 +254,7 @@ retention/archiving policies** and **secure access to all components**.
 with explicit `hints.default_config` — Docker labels alone were not enough to
 trigger collection for containers without `co.elastic.logs/*` labels), shipped
 to Logstash, and indexed into Elasticsearch as
-`transcendence-logs-YYYY.MM.dd`. Filebeat is built from a small custom
+`42bet-logs-YYYY.MM.dd`. Filebeat is built from a small custom
 Dockerfile (`COPY --chown=root:root filebeat.yml`) rather than bind-mounted,
 after repeated friction with the file's required root ownership on every edit.
 
@@ -271,7 +271,7 @@ handled the inbound case).
 Elasticsearch. Following the principle of least privilege, Logstash does not run as
 the `elastic` superuser; instead, it authenticates as a dedicated `logstash_writer`
 user with a restricted role (`logstash_writer_role` granting only index creation and
-write permissions on `transcendence-logs-*` and `waf-audit-*`), provisioned automatically
+write permissions on `42bet-logs-*` and `waf-audit-*`), provisioned automatically
 during startup by `ilm-init.sh`. Kibana — which, unlike
 Logstash, refuses to authenticate as `elastic` and requires a dedicated
 service account — authenticates as `kibana_system`, with its password set by
@@ -299,7 +299,7 @@ from the configured parts (`AIJDEFHZ`), removing header capture from the
 audit log entirely rather than attempting to redact individual header values.
 
 **Index Lifecycle Management (ILM)** — the retention/archiving requirement.
-A policy (`transcendence-logs-policy`: `hot` phase with daily/5GB rollover,
+A policy (`42bet-logs-policy`: `hot` phase with daily/5GB rollover,
 `delete` phase at 14 days) is applied automatically to both index families via
 two index templates. Since `make re` recreates Elasticsearch from scratch, the
 policy and templates are (re-)applied on every stack startup by a dedicated
