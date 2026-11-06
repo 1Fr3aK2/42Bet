@@ -1,7 +1,7 @@
 # nginx — `default.conf.template`
 
 Documentation for the nginx configuration (reverse proxy + WAF) of the
-transcendence project.
+42Bet project.
 
 > **Note on this revision:** this document has been updated to match the
 > current `default.conf.template`. The rate limiting, security headers (including
