@@ -6,7 +6,7 @@ export default function PrivacyPolicy() {
       <p className="legal-updated">Last updated: 29 October 2026</p>
 
       <p>
-        Transcendence is a student project of the 42 Lisboa curriculum: a crypto price
+        42Bet is a student project of the 42 Lisboa curriculum: a crypto price
         prediction game played with a virtual currency (T€), with a community forum. This
         policy explains which personal data the application collects, why, who can see it,
         how long it is kept and which rights you have under the EU General Data Protection
@@ -15,7 +15,7 @@ export default function PrivacyPolicy() {
 
       <h2>1. Who is responsible</h2>
       <p>
-        The data controller is the Transcendence project team, a group of five students at
+        The data controller is the 42Bet project team, a group of five students at
         42 Lisboa, Portugal. Requests about your data are handled by the project
         administrators (see section 9).
       </p>
@@ -113,11 +113,11 @@ export default function PrivacyPolicy() {
       </p>
 
       <h2>8. Age</h2>
-      <p>Transcendence simulates betting, so it is meant only for people aged 18 or over.</p>
+      <p>42Bet simulates betting, so it is meant only for people aged 18 or over.</p>
 
       <h2>9. Contact and changes</h2>
       <p>
-        To exercise your rights or ask a question, contact the Transcendence team at
+        To exercise your rights or ask a question, contact the 42Bet team at
         42 Lisboa, Portugal; requests are handled by the project administrators. If this
         policy changes, the new version is published on this page with a new date. See
         also the <a href="#/terms">Terms of Service</a>.
