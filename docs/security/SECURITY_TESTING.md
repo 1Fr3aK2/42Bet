@@ -1,8 +1,8 @@
-# Security Testing Report — ft_transcendence
+# Security Testing Report — 42Bet
 
 ## Context
 
-This document records the security tests performed against the infrastructure of the ft_transcendence project, covering the services configured under the Cybersecurity/DevOps area (item 5).
+This document records the security tests performed against the infrastructure of the 42Bet project, covering the services configured under the Cybersecurity/DevOps area (item 5).
 
 The tests were performed manually to verify that the services are properly protected and that the infrastructure withstands common attack vectors.
 

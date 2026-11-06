@@ -1,9 +1,9 @@
-# Cybersecurity & DevOps Report — ft_transcendence
+# Cybersecurity & DevOps Report — 42Bet
 
 ## Role & Scope
 
 This report consolidates the work delivered under the **Cybersecurity / DevOps /
-Monitoring** role for the ft_transcendence project: Docker, deployment, HTTPS,
+Monitoring** role for the 42Bet project: Docker, deployment, HTTPS,
 secrets, WAF/Vault, logs, monitoring, health checks, backups/disaster recovery,
 security testing, and technical documentation.
 
