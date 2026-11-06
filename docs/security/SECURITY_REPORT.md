@@ -73,6 +73,7 @@ common attack vectors. Full detail in `SECURITY_TESTING.md`.
 | Path Traversal | ✅ Blocked (404, path normalized) |
 | Command Injection (WAF) | ✅ Blocked (403) |
 | Vault access without token | ✅ Rejected (permission denied) |
+| Postgres superuser used by the application (S9) | ✅ Resolved — `app_user`, a least-privilege role, replaces `POSTGRES_USER` for all backend runtime connections |
 
 **Gaps noted in the original pass — status updated:**
 - ~~Vault dev mode (in-memory, no real seal)~~ — **resolved**, see Section 3.
@@ -81,6 +82,14 @@ common attack vectors. Full detail in `SECURITY_TESTING.md`.
   (secrets, policy, AppRole) completes; the backend only ever authenticates
   with a scoped AppRole token afterwards. See Section 3 and
   `VAULT_PRODUCTION.md`, "Idempotent bootstrap and root token revocation".
+- ~~Backend connects to Postgres as the superuser (S9)~~ — **resolved.**
+  `postgres/init/01-app-user.sh` creates `app_user` with `SELECT`/`INSERT`/
+  `UPDATE`/`DELETE` only, no `CREATE`, no `CREATEROLE`, no external-program
+  `COPY`. The backend's `secret/postgres` Vault entry now holds `app_user`'s
+  credentials, not the superuser's. `backend_migrate` still connects as
+  `POSTGRES_USER` (needs DDL for migrations). Verified: `CREATE TABLE`,
+  `CREATE ROLE` and `COPY ... TO PROGRAM` all return `permission denied` as
+  `app_user`; `test-bets.sh` (54/54) and `test-users.sh` (19/19) unaffected.
 - Exposed Redis/Postgres ports and self-signed certificates remain accepted
   trade-offs for this project's scope (not production deployment);
   documented rather than silently ignored.
@@ -425,8 +434,8 @@ with the valid key provided.
 ## 11. Known Gaps & Future Work
 
 Updated from the original report — several previous gaps are now closed
-(Vault dev mode, forum per-user rate limiting, centralized logging); what
-remains open:
+(Vault dev mode, forum per-user rate limiting, centralized logging, Postgres
+least privilege); what remains open:
 
 - **Container hardening** — `no-new-privileges`, `read_only` filesystems
   where feasible, not yet applied across services.
@@ -458,4 +467,5 @@ remains open:
 - `elasticsearch_ilm_init` and `kibana_user_init` services (automated, idempotent ELK configuration)
 - Hardened Vault deployment (real init/unseal, TLS, persisted AppRole credentials)
 - Aggregated health check (`/health`, `/health/status`) and standalone status page
+- Least-privilege Postgres role (`app_user`) for all backend runtime connections
 - Corrected `Makefile` (decoupled routine builds from full cache resets)
