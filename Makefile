@@ -4,7 +4,7 @@ SCRIPT_CERTS  = ./scripts/setup-certs.sh
 # Alvo principal (por omissão)
 all: check-env certs build up
 	@echo "=========================================================="
-	@echo "  42Bet is up and running!                        "
+	@echo "  42Bet is up and running!                                "
 	@echo "  URL: https://localhost                                  "
 	@echo "=========================================================="
 
