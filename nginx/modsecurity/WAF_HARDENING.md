@@ -62,6 +62,8 @@ a configuration-time directive, mount a file on
 | `1000003` | *(Removed)* Former PromQL exclusion for `/prometheus/api/v1/` (endpoint now returns 404) |
 | `1000004` | Forum text fields exclusion (`/forum/`)              |
 | `1000005` | Kibana session cookie exclusion (`/kibana`, rule `942440`, `REQUEST_COOKIES:sid`) |
+| `1000006` | Grafana userstorage `history` field exclusion (`/grafana/apis/userstorage.grafana.app/`, `ARGS:json.spec.data.history`) |
+| `1000007` | Extra allowed Content-Type `application/merge-patch+json` (same path only, rule `920420`) |
 
 ### Configuration-time exclusions in use
 
@@ -369,6 +371,116 @@ Things worth knowing if this is touched again:
   in the audit log that the rule fired. A `403` from another rule proves
   nothing about this exclusion.
 
+## `before-crs.conf` — Grafana userstorage (page history)
+
+```apache
+SecRule REQUEST_URI "@beginsWith /grafana/apis/userstorage.grafana.app/" \
+  "id:1000006,\
+  phase:1,\
+  nolog,\
+  pass,\
+  t:none,\
+  ctl:ruleRemoveTargetByTag=attack-sqli;ARGS:json.spec.data.history,\
+  ctl:ruleRemoveTargetByTag=attack-rce;ARGS:json.spec.data.history,\
+  ctl:ruleRemoveTargetById=920230;ARGS:json.spec.data.history,\
+  ctl:ruleRemoveTargetById=941330;ARGS:json.spec.data.history,\
+  ctl:ruleRemoveTargetById=941340;ARGS:json.spec.data.history"
+```
+
+**Symptom:** normal Grafana pages produced `403` on
+`/grafana/apis/userstorage.grafana.app/v0alpha1/namespaces/default/user-storage/...`
+(`POST` and `PATCH`).
+
+**Cause:** Grafana stores the pages the user visited in the `history` field of
+that API. It is a list of URLs, so it holds quotes, `%XX` sequences and
+characters such as `<` or `{`. The audit log showed SQL-injection and
+command-injection rules, `920230` (multiple URL encoding) and two generic XSS
+filters (`941330`, `941340`) matching that field.
+
+**Fix:** the SQL-injection and command-injection groups (tags `attack-sqli`,
+`attack-rce`) and the three rule ids are removed for
+`ARGS:json.spec.data.history` only, and only on this path.
+
+What keeps this safe:
+
+- **Field-scoped and path-scoped.** Every other field of the endpoint, and
+  every other route, keeps every rule.
+- **The other XSS rules still inspect `history`.** A `<script>` payload in that
+  field is still `403`.
+- **The endpoint requires a Grafana login.**
+
+Things worth knowing if this is touched again:
+
+- The field is `ARGS:json.spec.data.history` (`json.` prefix, as in the avatar
+  exclusion).
+- `@beginsWith` is used because the API path is a fixed prefix with the
+  namespace and record id after it.
+
+## `before-crs.conf` — Grafana userstorage (Content-Type)
+
+```apache
+SecRule REQUEST_URI "@beginsWith /grafana/apis/userstorage.grafana.app/" \
+  "id:1000007,\
+  phase:1,\
+  nolog,\
+  pass,\
+  t:none,\
+  setvar:'tx.allowed_request_content_type=|application/x-www-form-urlencoded| |multipart/form-data| |text/xml| |application/xml| |application/soap+xml| |application/json| |application/merge-patch+json|'"
+```
+
+**Symptom:** `PATCH` requests to the userstorage API returned `403`.
+
+**Cause:** Grafana updates the record with `Content-Type:
+application/merge-patch+json` (Kubernetes-style API). Rule `920420` blocks any
+type that is not in `tx.allowed_request_content_type`.
+
+**Fix:** for this path only, the variable is set to the list above, which is
+the default list plus `application/merge-patch+json`. Every other route keeps
+the default list.
+
+Things worth knowing if this is touched again:
+
+- The list must contain every type of the image's default plus the new one,
+  otherwise this path would refuse types it accepted before. Compare it with the
+  default after an image upgrade:
+  ```bash
+  docker compose exec nginx sh -c 'grep -R "allowed_request_content_type" /etc/modsecurity.d/owasp-crs/crs-setup.conf /etc/modsecurity.d/owasp-crs/rules/REQUEST-901-INITIALIZATION.conf'
+  ```
+- `/etc/modsecurity.d/owasp-crs` is a symlink: use `grep -R`, not `grep -r`.
+
+## Known limitation: Grafana apps that keep their state in the URL
+
+Grafana drilldown apps such as **Explore Traces**
+(`/grafana/a/grafana-exploretraces-app/explore?...`) store their whole state in
+the URL (`var-primarySignal=nestedSetParent%3C0`, `selection={"...`). The
+browser then sends that URL in two places, and the CRS reads both as attacks:
+
+| Request | Rules | Variable |
+|---|---|---|
+| `GET /grafana/a/grafana-exploretraces-app/explore?...` (reload with F5) | `942131`, `942200`, `942340`, `942430` | `ARGS:var-primarySignal`, `ARGS:selection` |
+| `GET /favicon.ico` while on that page | `932206`, `942200` | `REQUEST_HEADERS:referer` |
+
+Result: reloading that page returns `403`.
+
+**Decision: treated as a known limitation, not fixed.**
+
+- The project does not use Explore Traces, and there is no Tempo/Jaeger backend,
+  so the page has nothing to show.
+- Making it work needs exclusions in at least three places (query arguments on
+  `/grafana/a/...`, the `Referer` header on `/favicon.ico`, and more `Referer`
+  rules on userstorage). Each one opens a client-controlled field for a page
+  nobody uses.
+- A rule excluding `Referer` from `932206`/`942200` (`1000008`) was tried during
+  this work and **removed**: with it gone, normal Grafana pages (home,
+  dashboards, Explore with Prometheus) still gave no `403` and no
+  `932206`/`942200` hit on `Referer`.
+- The WAF is working as designed: at paranoia level 2, `nestedSetParent<0`
+  looks like SQL.
+
+If another drilldown app (Metrics, Logs, Pyroscope are installed) is adopted
+later, repeat the audit-log analysis for that page. Do not reuse the Explore
+Traces results.
+
 ## Former Vite dev server false positive (Resolved)
 
 Rule `930121` (Local File Inclusion detection) flags any request whose
@@ -429,6 +541,22 @@ to end, not assumed:
     (the `@rx` does not match this route)
   - The same HTTP codes were obtained after recreating the container
     (`docker compose up -d --force-recreate nginx`).
+- Grafana userstorage (rules `1000006` and `1000007`), curl without a Grafana
+  session (`401` = the WAF let it through, `403` = the WAF blocked it):
+  - `PATCH` with `Content-Type: application/merge-patch+json` and `history` → `401`
+  - `POST` JSON with `history` → `401`
+  - `PATCH` merge-patch with another field → `403`
+  - `POST` with `<script>` in `history` → `403`
+  - `PATCH /users/me` with `application/merge-patch+json` → `403` (the extra
+    type is not open on other routes)
+
+  In the browser, normal Grafana pages give `PATCH 200` and `GET 200` on
+  userstorage.
+- Explore Traces: with the `Referer` exclusion removed, normal Grafana pages
+  give no `403` on userstorage or `/favicon.ico` and no `932206`/`942200` hit on
+  `referer`; the Explore Traces URL still gives `403` (documented limitation).
+- Existing exclusions after the userstorage change: `bash scripts/test-forum.sh`
+  → 11/11 and `bash scripts/test-users.sh` → 19/19.
 
 ## How to test
 
@@ -518,6 +646,44 @@ to end, not assumed:
    to `/kibana`, and reload a few times (the failure depended on the session
    token, so one success is not proof). Then check that `942440` no longer
    shows up in `audit.log` for requests carrying the `sid` cookie.
+9. If touching the Grafana userstorage exclusions (rules `1000006`, `1000007`),
+   check both sides, without a Grafana session. `401` means the WAF let the
+   request through; `403` (nginx page, 548 bytes) means the WAF blocked it.
+   Any record id works:
+   ```bash
+   URL="https://localhost/grafana/apis/userstorage.grafana.app/v0alpha1/namespaces/default/user-storage/test"
+   ```
+   ```bash
+   # must be 401: merge-patch on history
+   curl -sk -o /dev/null -w "%{http_code}\n" -X PATCH "$URL" \
+     -H "Content-Type: application/merge-patch+json" \
+     -d '{"spec":{"data":{"history":"[{\"url\":\"/d/x?a=1'"'"'&b=%2F\"}]"}}}'
+   ```
+   ```bash
+   # must be 403: same type, another field
+   curl -sk -o /dev/null -w "%{http_code}\n" -X PATCH "$URL" \
+     -H "Content-Type: application/merge-patch+json" \
+     -d '{"spec":{"data":{"other":"1'"'"' OR 1=1 -- "}}}'
+   ```
+   ```bash
+   # must be 403: XSS still inspected inside history
+   curl -sk -o /dev/null -w "%{http_code}\n" -X POST "$URL" \
+     -H "Content-Type: application/json" \
+     -d '{"spec":{"data":{"history":"<script>alert(1)</script>"}}}'
+   ```
+   ```bash
+   # must be 403: the extra Content-Type is not open on other routes
+   curl -sk -o /dev/null -w "%{http_code}\n" -X PATCH https://localhost/users/me \
+     -H "Content-Type: application/merge-patch+json" -d '{"username":"x"}'
+   ```
+   Then open the Grafana home, a dashboard (reload with F5) and Explore with
+   Prometheus, and check that no `403` shows up on userstorage:
+   ```bash
+   docker compose logs nginx --since 5m | grep -v 'ModSecurity' \
+     | grep -o '"[A-Z]* [^ ]* HTTP[^"]*" 403' | sed 's/?[^ ]*//; s/page-history:[a-z0-9]*/page-history:ID/' | sort | uniq -c | sort -rn
+   ```
+   `grep ' 403 '` alone over-counts (response sizes, `Referer` text, and two
+   log lines per block).
 
 ## Status
 
@@ -549,3 +715,11 @@ to end, not assumed:
 - [x] Kibana `sid` exclusion scoped to `/kibana` with a runtime rule
       (`1000005`) in `before-crs.conf`; scope verified (step 8 of
       *How to test*)
+- [x] Grafana userstorage `history` exclusion added (`1000006`), scoped by tag
+      and rule id to `ARGS:json.spec.data.history` on that path only
+- [x] `application/merge-patch+json` allowed for the userstorage path only
+      (`1000007`, rule `920420`)
+- [x] Referer exclusion (`1000008`) tried and removed: normal Grafana pages do
+      not need it
+- [x] Known limitation documented: Grafana apps that keep state in the URL
+      (Explore Traces) return `403` on reload; accepted, not fixed
