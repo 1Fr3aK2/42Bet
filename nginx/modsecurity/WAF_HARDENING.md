@@ -19,7 +19,6 @@ environment:
   BLOCKING_PARANOIA: "2"
 volumes:
   - ./nginx/modsecurity/before-crs.conf:/etc/modsecurity.d/owasp-crs/rules/REQUEST-900-EXCLUSION-RULES-BEFORE-CRS.conf
-  - ./nginx/modsecurity/exclusions.conf:/etc/modsecurity.d/owasp-crs/rules/RESPONSE-999-EXCLUSION-RULES-AFTER-CRS.conf
 ```
 
 - **`PARANOIA` / `BLOCKING_PARANOIA` raised to 2** — the CRS distinguishes
@@ -33,7 +32,10 @@ volumes:
   that must run *before* the CRS loads (e.g. setting `tx.allowed_methods`),
   one for rules that run *after* (e.g. `SecRuleRemoveById`). Using these,
   rather than editing the CRS's own rule files, keeps customizations isolated
-  and upgrade-safe.
+  and upgrade-safe. **This project only overrides the first one**
+  (`before-crs.conf`); the `RESPONSE-999-...` placeholder keeps the image's
+  default content because every exclusion in use is a runtime exclusion (see
+  the next section).
 
 ### Which file does an exclusion go in?
 
@@ -41,8 +43,14 @@ There are two kinds of exclusion, and the kind decides the file:
 
 | Kind | Examples | File | Why |
 |------|----------|------|-----|
-| **Runtime** (a `SecRule` with a `ctl:` action) | `ctl:ruleRemoveTargetById`, `ctl:ruleRemoveTargetByTag` | `before-crs.conf` | Runs during the request (phase 1) and must fire *before* the CRS rule it targets is evaluated (phase 2). |
-| **Configuration-time** (a directive) | `SecRuleUpdateTargetById`, `SecRuleRemoveById` | `exclusions.conf` | Edits a rule that is **already loaded**. Placed before the CRS, the target rule does not exist yet, so the directive errors out or has no effect. |
+| **Runtime** (a `SecRule` with a `ctl:` action) | `ctl:ruleRemoveTargetById`, `ctl:ruleRemoveTargetByTag` | `before-crs.conf` | Runs during the request (phase 1) and must fire *before* the CRS rule it targets is evaluated (phase 2). It can be conditioned on the request (URI, method), so the exclusion can be limited to one route. |
+| **Configuration-time** (a directive) | `SecRuleUpdateTargetById`, `SecRuleRemoveById` | `RESPONSE-999-EXCLUSION-RULES-AFTER-CRS.conf` (**not used by this project at the moment**) | Edits a rule that is **already loaded**, so it must come after the CRS. Placed before the CRS, the target rule does not exist yet, so the directive errors out or has no effect. It cannot be conditioned on the request: it applies to every route. |
+
+The Kibana `sid` cookie exclusion used to be a configuration-time directive and
+was moved to a runtime rule precisely because of the last point: the directive
+could not be limited to `/kibana`, the `ctl:` action can (see the Kibana
+section below). If a future exclusion must be a configuration-time directive,
+mount a file on `RESPONSE-999-EXCLUSION-RULES-AFTER-CRS.conf` again.
 
 ### Local rule IDs in use
 
@@ -53,12 +61,12 @@ There are two kinds of exclusion, and the kind decides the file:
 | `1000002` | PromQL exclusion for Grafana (`POST /grafana/api/ds/query`) |
 | `1000003` | *(Removed)* Former PromQL exclusion for `/prometheus/api/v1/` (endpoint now returns 404) |
 | `1000004` | Forum text fields exclusion (`/forum/`)              |
+| `1000005` | Kibana session cookie exclusion (`/kibana`, rule `942440`, `REQUEST_COOKIES:sid`) |
 
-### Configuration-time exclusions in use (no local ID)
+### Configuration-time exclusions in use
 
-| Directive | Rule | Target removed | Purpose |
-|-----------|------|----------------|---------|
-| `SecRuleUpdateTargetById` | `942440` | `REQUEST_COOKIES:sid` | Kibana session cookie false positive |
+None. The only one the project ever had (`SecRuleUpdateTargetById 942440
+"!REQUEST_COOKIES:sid"`, for Kibana) was replaced by rule `1000005`.
 
 ## `before-crs.conf` — allowing REST methods
 
@@ -276,13 +284,21 @@ What keeps this safe:
   shell, Prisma sends them to PostgreSQL as query parameters, and React
   escapes them on display.
 
-## `exclusions.conf` — Kibana session cookie
+## `before-crs.conf` — Kibana session cookie
 
 ```apache
 # Rule 942440 (SQL comment sequence) false positive on Kibana's session cookie.
-# The 'sid' value is a random Iron token (base64url), which can contain '--' by chance.
-# Only the cookie target is excluded; the rule stays active for everything else.
-SecRuleUpdateTargetById 942440 "!REQUEST_COOKIES:sid"
+# The 'sid' value is a random Iron token (base64url), which can contain '--'
+# by chance. The cookie is set with Path=/kibana, so the exclusion is limited
+# to that route. Only the cookie target is excluded; the rule stays active
+# for every other cookie, argument and route.
+SecRule REQUEST_URI "@rx ^/kibana(/|\?|$)" \
+  "id:1000005,\
+  phase:1,\
+  nolog,\
+  pass,\
+  t:none,\
+  ctl:ruleRemoveTargetById=942440;REQUEST_COOKIES:sid"
 ```
 
 **Symptom:** after logging in to Kibana (`/kibana`) and using other services
@@ -305,41 +321,58 @@ already skips values that look like a plain token or JWT, but the Iron format
 (with `*` and `.` separators) does not fit that pattern. The rule only runs
 at paranoia level 2 (`PARANOIA: "2"`); at level 1 it would not fire.
 
-**Why `exclusions.conf` (after the CRS):** `SecRuleUpdateTargetById` is a
-configuration-time directive. It edits a rule that is already loaded, so it
-must come after the CRS rules (see *Which file does an exclusion go in?*).
-In `before-crs.conf` rule `942440` would not exist yet.
+**Why a runtime rule in `before-crs.conf`:** the first version of this fix was
+a configuration-time directive in `exclusions.conf`
+(`SecRuleUpdateTargetById 942440 "!REQUEST_COOKIES:sid"`). It worked, but it
+was path-independent: it excluded a cookie named `sid` on *any* route, and a
+directive cannot be conditioned on the URI. Rule `1000005` does the same
+exclusion with `ctl:ruleRemoveTargetById`, which only applies to the
+transactions that match the rule's condition. It runs in phase 1 (cookies are
+already available) and therefore fires before `942440`, which is evaluated in
+phase 2. That is also why it lives in `before-crs.conf`: `ctl` only affects
+rules that have not been evaluated yet. After the move, `exclusions.conf` and
+its volume in `docker-compose.yml` were removed.
 
 **Why only the cookie:** `SecRuleRemoveById 942440` would disable SQL comment
-detection everywhere (every argument, body and header). The `!REQUEST_COOKIES:sid`
-form only removes that one variable from the list the rule inspects; the rule
-stays fully active for every other cookie, parameter and body field.
+detection everywhere (every argument, body and header). The
+`REQUEST_COOKIES:sid` target only removes that one variable from the list the
+rule inspects; the rule stays fully active for every other cookie, parameter
+and body field, including inside `/kibana`.
+
+**Why the `@rx` and not `@beginsWith`:** `@rx ^/kibana(/|\?|$)` matches
+`/kibana`, `/kibana/...` and `/kibana?...`, but not `/kibana-x/`. A
+`@beginsWith /kibana` would also exclude routes that merely start with that
+text. It is the same pattern used for `/users/me` in rule `1000001`.
 
 What keeps this safe:
 
 - **Target-scoped, not rule-scoped.** Only `REQUEST_COOKIES:sid` is excluded
   from `942440`; all other CRS rules still inspect the `sid` cookie.
+- **Route-scoped.** The exclusion only applies under `/kibana`, where the
+  cookie is set (`Path=/kibana`). A `sid` cookie sent to any other route is
+  still inspected by `942440`.
 - **The value is not attacker-controlled input to a query.** `sid` is an
   encrypted, signed session token. Kibana decrypts and validates it, and
   never uses it to build SQL.
 
 Things worth knowing if this is touched again:
 
-- The exclusion is **path-independent**: it applies to a cookie named `sid` on
-  any route. At the moment `sid` is only used by Kibana (`Path=/kibana`). If
-  another service starts using the same cookie name, it is excluded too. To
-  limit it to `/kibana`, replace it with a runtime exclusion in
-  `before-crs.conf` (`ctl:ruleRemoveTargetById=942440;REQUEST_COOKIES:sid`,
-  chained on `REQUEST_URI @beginsWith /kibana`, in phase 1).
+- If another service under `/kibana` (or a change to Kibana's base path)
+  starts using different cookie names that trip `942440`, add a separate
+  target; do not widen the regex.
 - **Near miss:** `POST /kibana/internal/security/login` also triggers `920230`
   (*Multiple URL Encoding Detected*, severity WARNING = 3 points) because of
   the `%2F` in `currentURL`. It does not block on its own (3 < 5), but any
   other rule of 2 points or more on the same request would. If the Kibana
   login starts returning `403`, check the audit log for this rule first.
 - Rules are only read at startup: `docker compose restart nginx` after any
-  change to `exclusions.conf`.
+  change to `before-crs.conf`.
+- When testing with `curl`, `--` alone does not trigger `942440`. Use `-- `
+  (two hyphens followed by a space), e.g. `Cookie: sid=abc-- def`, and confirm
+  in the audit log that the rule fired. A `403` from another rule proves
+  nothing about this exclusion.
 
-## `exclusions.conf` — Former Vite dev server false positive (Resolved)
+## Former Vite dev server false positive (Resolved)
 
 Rule `930121` (Local File Inclusion detection) flags any request whose
 `Referer` header contains the string `node_modules/` — a legitimate
@@ -350,8 +383,9 @@ development.
 **Status: Resolved in production.** With the frontend migrated to a static
 multi-stage production build (PR #75), asset requests are compiled into `/assets/`
 with content hashes and no longer reference `node_modules/`. The exclusion was
-therefore removed from `exclusions.conf` and rule `930121` is now fully active.
-(`exclusions.conf` now only holds the Kibana cookie exclusion above.)
+therefore removed and rule `930121` is now fully active. (This exclusion lived
+in `exclusions.conf`, which has since been removed altogether; the project
+currently has no configuration-time exclusions.)
 
 ## Verification
 
@@ -388,11 +422,22 @@ to end, not assumed:
   any `/kibana` path and no new `942440` entries in `audit.log`; a real
   `'--` in a query argument (`/crypto/BTC/candles?interval=1'--`) is still
   `403` and still logs `942440`.
+- Kibana cookie exclusion scope (after moving it to rule `1000005`), using
+  `sid=abc-- def` and checking `audit.log` for `942440` and its target:
+  - `GET /kibana/` with that `sid` → `302` (not blocked, no `942440` entry)
+  - `GET /users/me` with the same `sid` → `403`, `942440` on `REQUEST_COOKIES:sid`
+  - `GET /kibana/` with the same value in another cookie (`foo`) → `403`,
+    `942440` on `REQUEST_COOKIES:foo`
+  - `GET /kibana/?x=abc--%20def` → `403`, `942440` on `ARGS:x`
+  - `GET /kibana-x/` with that `sid` → `403`, `942440` on `REQUEST_COOKIES:sid`
+    (the `@rx` does not match this route)
+  - The same results were obtained after removing `exclusions.conf` and its
+    volume, so the rule does not depend on the old file.
 
 ## How to test
 
 1. `docker compose up -d nginx` after any change to these files
-   (`docker compose restart nginx` is enough for `exclusions.conf`).
+   (`docker compose restart nginx` is enough for edits to `before-crs.conf`).
 2. Exercise real app flows (forum posts, comments, reports, moderation) and
    confirm nothing legitimate gets an HTML `403 Forbidden` page (a JSON
    error from the app itself, e.g. `400`/`404`, is fine — that means the
@@ -448,11 +493,35 @@ to end, not assumed:
 7. If touching the forum exclusion, run `bash scripts/test-forum.sh`:
    ordinary sentences must pass in posts, comments and the search box, while
    `<script>`, `onerror=` and SQL injection in `page` must still return `403`.
-8. If touching the Kibana cookie exclusion, repeat the original flow: log in
-   to `https://localhost/kibana/`, open `/grafana`, return to `/kibana`, and
-   reload a few times (the failure depended on the session token, so one
-   success is not proof). Then check that `942440` no longer shows up in
-   `audit.log` for requests carrying the `sid` cookie.
+8. If touching the Kibana cookie exclusion (rule `1000005`), check both the
+   scope and the real flow.
+
+   Scope — run these and confirm in `audit.log` that `942440` appears (with
+   the expected target) in every case that returns `403`:
+   ```bash
+   # must NOT be 403 — sid with "-- " inside /kibana
+   curl -sk -o /dev/null -w "%{http_code}\n" -H "Cookie: sid=abc-- def" "https://localhost/kibana/?t=T1"
+   # must be 403 — same sid on another route
+   curl -sk -o /dev/null -w "%{http_code}\n" -H "Cookie: sid=abc-- def" "https://localhost/users/me?t=T2"
+   # must be 403 — another cookie inside /kibana
+   curl -sk -o /dev/null -w "%{http_code}\n" -H "Cookie: foo=abc-- def" "https://localhost/kibana/?t=T3"
+   # must be 403 — an argument inside /kibana
+   curl -sk -o /dev/null -w "%{http_code}\n" "https://localhost/kibana/?t=T4&x=abc--%20def"
+   # must be 403 — similar route, the regex must not match
+   curl -sk -o /dev/null -w "%{http_code}\n" -H "Cookie: sid=abc-- def" "https://localhost/kibana-x/?t=T5"
+   ```
+   ```bash
+   docker compose exec -T nginx cat /var/log/modsecurity/audit.log \
+     | grep -E 't=T[1-5]' \
+     | grep -oE '"uri":"[^"]*"|found within MATCHED_VARS:[A-Z_]+:[A-Za-z0-9_]+'
+   ```
+   Run the commands one at a time, without the `#` comments on the same line
+   (zsh treats pasted comments as part of the command).
+
+   Real flow: log in to `https://localhost/kibana/`, open `/grafana`, return
+   to `/kibana`, and reload a few times (the failure depended on the session
+   token, so one success is not proof). Then check that `942440` no longer
+   shows up in `audit.log` for requests carrying the `sid` cookie.
 
 ## Status
 
@@ -477,7 +546,10 @@ to end, not assumed:
       `attack-rce` groups, for `ARGS:json.avatar` only
 - [x] Forum exclusion added (`1000004`), scoped by tag to the forum's text
       fields only
-- [x] Kibana `sid` cookie exclusion added to `exclusions.conf` (`942440`,
-      `REQUEST_COOKIES:sid` only)
+- [x] Kibana `sid` cookie exclusion added (`942440`, `REQUEST_COOKIES:sid`
+      only)
 - [x] Kibana → Grafana → Kibana flow re-tested after the exclusion (step 8
       of *How to test*)
+- [x] Kibana `sid` exclusion moved from `exclusions.conf` to a runtime rule
+      (`1000005`) in `before-crs.conf`, limited to `/kibana`; `exclusions.conf`
+      and its volume removed; scope verified (step 8 of *How to test*)
