@@ -46,11 +46,11 @@ There are two kinds of exclusion, and the kind decides the file:
 | **Runtime** (a `SecRule` with a `ctl:` action) | `ctl:ruleRemoveTargetById`, `ctl:ruleRemoveTargetByTag` | `before-crs.conf` | Runs during the request (phase 1) and must fire *before* the CRS rule it targets is evaluated (phase 2). It can be conditioned on the request (URI, method), so the exclusion can be limited to one route. |
 | **Configuration-time** (a directive) | `SecRuleUpdateTargetById`, `SecRuleRemoveById` | `RESPONSE-999-EXCLUSION-RULES-AFTER-CRS.conf` (**not used by this project at the moment**) | Edits a rule that is **already loaded**, so it must come after the CRS. Placed before the CRS, the target rule does not exist yet, so the directive errors out or has no effect. It cannot be conditioned on the request: it applies to every route. |
 
-The Kibana `sid` cookie exclusion used to be a configuration-time directive and
-was moved to a runtime rule precisely because of the last point: the directive
-could not be limited to `/kibana`, the `ctl:` action can (see the Kibana
-section below). If a future exclusion must be a configuration-time directive,
-mount a file on `RESPONSE-999-EXCLUSION-RULES-AFTER-CRS.conf` again.
+The Kibana `sid` cookie exclusion is a runtime rule precisely because of the
+last point: a configuration-time directive cannot be limited to `/kibana`, the
+`ctl:` action can (see the Kibana section below). If a future exclusion must be
+a configuration-time directive, mount a file on
+`RESPONSE-999-EXCLUSION-RULES-AFTER-CRS.conf`.
 
 ### Local rule IDs in use
 
@@ -65,8 +65,7 @@ mount a file on `RESPONSE-999-EXCLUSION-RULES-AFTER-CRS.conf` again.
 
 ### Configuration-time exclusions in use
 
-None. The only one the project ever had (`SecRuleUpdateTargetById 942440
-"!REQUEST_COOKIES:sid"`, for Kibana) was replaced by rule `1000005`.
+None. Every exclusion in use is a runtime rule in `before-crs.conf`.
 
 ## `before-crs.conf` — allowing REST methods
 
@@ -321,17 +320,15 @@ already skips values that look like a plain token or JWT, but the Iron format
 (with `*` and `.` separators) does not fit that pattern. The rule only runs
 at paranoia level 2 (`PARANOIA: "2"`); at level 1 it would not fire.
 
-**Why a runtime rule in `before-crs.conf`:** the first version of this fix was
-a configuration-time directive in `exclusions.conf`
-(`SecRuleUpdateTargetById 942440 "!REQUEST_COOKIES:sid"`). It worked, but it
-was path-independent: it excluded a cookie named `sid` on *any* route, and a
-directive cannot be conditioned on the URI. Rule `1000005` does the same
-exclusion with `ctl:ruleRemoveTargetById`, which only applies to the
+**Why a runtime rule in `before-crs.conf`:** a configuration-time directive
+(`SecRuleUpdateTargetById 942440 "!REQUEST_COOKIES:sid"`) would also remove the
+cookie target, but it is path-independent: it would exclude a cookie named
+`sid` on *any* route, because a directive cannot be conditioned on the URI.
+Rule `1000005` uses `ctl:ruleRemoveTargetById`, which only applies to the
 transactions that match the rule's condition. It runs in phase 1 (cookies are
 already available) and therefore fires before `942440`, which is evaluated in
 phase 2. That is also why it lives in `before-crs.conf`: `ctl` only affects
-rules that have not been evaluated yet. After the move, `exclusions.conf` and
-its volume in `docker-compose.yml` were removed.
+rules that have not been evaluated yet.
 
 **Why only the cookie:** `SecRuleRemoveById 942440` would disable SQL comment
 detection everywhere (every argument, body and header). The
@@ -383,9 +380,8 @@ development.
 **Status: Resolved in production.** With the frontend migrated to a static
 multi-stage production build (PR #75), asset requests are compiled into `/assets/`
 with content hashes and no longer reference `node_modules/`. The exclusion was
-therefore removed and rule `930121` is now fully active. (This exclusion lived
-in `exclusions.conf`, which has since been removed altogether; the project
-currently has no configuration-time exclusions.)
+therefore removed and rule `930121` is now fully active. The project currently
+has no configuration-time exclusions.
 
 ## Verification
 
@@ -431,8 +427,8 @@ to end, not assumed:
   - `GET /kibana/?x=abc--%20def` → `403`, `942440` on `ARGS:x`
   - `GET /kibana-x/` with that `sid` → `403`, `942440` on `REQUEST_COOKIES:sid`
     (the `@rx` does not match this route)
-  - The same results were obtained after removing `exclusions.conf` and its
-    volume, so the rule does not depend on the old file.
+  - The same HTTP codes were obtained after recreating the container
+    (`docker compose up -d --force-recreate nginx`).
 
 ## How to test
 
@@ -550,6 +546,6 @@ to end, not assumed:
       only)
 - [x] Kibana → Grafana → Kibana flow re-tested after the exclusion (step 8
       of *How to test*)
-- [x] Kibana `sid` exclusion moved from `exclusions.conf` to a runtime rule
-      (`1000005`) in `before-crs.conf`, limited to `/kibana`; `exclusions.conf`
-      and its volume removed; scope verified (step 8 of *How to test*)
+- [x] Kibana `sid` exclusion scoped to `/kibana` with a runtime rule
+      (`1000005`) in `before-crs.conf`; scope verified (step 8 of
+      *How to test*)
