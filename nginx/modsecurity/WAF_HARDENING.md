@@ -58,10 +58,15 @@ a configuration-time directive, mount a file on
 |-----------|------------------------------------------------------|
 | `900200`  | Allowed HTTP methods (REST)                          |
 | `1000001` | Base64 avatar exclusion (`PATCH /users/me`)          |
-| `1000002` | PromQL exclusion for Grafana (`POST /grafana/api/ds/query`) |
+| `1000002` | PromQL exclusion for Grafana (`POST /grafana/api/ds/query`, `queries.array_0` and `array_1`) |
 | `1000003` | *(Removed)* Former PromQL exclusion for `/prometheus/api/v1/` (endpoint now returns 404) |
 | `1000004` | Forum text fields exclusion (`/forum/`)              |
 | `1000005` | Kibana session cookie exclusion (`/kibana`, rule `942440`, `REQUEST_COOKIES:sid`) |
+| `1000006` | Grafana userstorage `history` field exclusion (`/grafana/apis/userstorage.grafana.app/`, `ARGS:json.spec.data.history`) |
+| `1000007` | Extra allowed Content-Type `application/merge-patch+json` (same path only, rule `920420`) |
+| `1000008` | Grafana `Referer` header: SQL-injection and command-injection groups excluded on `/grafana/` requests only (page state in the URL) |
+| `1000009` | Grafana Explore `panes` argument: SQL-injection and command-injection groups excluded on `/grafana/explore` only (reload with F5) |
+| `1000010` | Grafana Explore query history: PromQL field of `POST /grafana/api/query-history` (`queries.array_0.expr`) |
 
 ### Configuration-time exclusions in use
 
@@ -185,6 +190,8 @@ SecRule REQUEST_METHOD "@streq POST" \
     "t:none,\
     ctl:ruleRemoveTargetByTag=attack-sqli;ARGS:json.queries.array_0.expr,\
     ctl:ruleRemoveTargetByTag=attack-rce;ARGS:json.queries.array_0.expr,\
+    ctl:ruleRemoveTargetByTag=attack-sqli;ARGS:json.queries.array_1.expr,\
+    ctl:ruleRemoveTargetByTag=attack-rce;ARGS:json.queries.array_1.expr,\
     ctl:ruleRemoveTargetById=941380;ARGS:json.queries.array_0.legendFormat"
 
 # Rule 1000003 was removed: /prometheus/ is no longer publicly proxied (returns 404).
@@ -211,6 +218,7 @@ SQL-injection and command-injection groups (tags `attack-sqli` and
 | Rule | Endpoint                         | Field excluded                          | What is removed            |
 |------|----------------------------------|-----------------------------------------|----------------------------|
 | `1000002` | `POST /grafana/api/ds/query` | `ARGS:json.queries.array_0.expr`        | `attack-sqli`, `attack-rce` |
+| `1000002` | `POST /grafana/api/ds/query` | `ARGS:json.queries.array_1.expr`        | `attack-sqli`, `attack-rce` |
 | `1000002` | `POST /grafana/api/ds/query` | `ARGS:json.queries.array_0.legendFormat`| rule `941380` only          |
 
 *(Note: Rule `1000003` previously excluded `attack-sqli` and `attack-rce` on `/prometheus/api/v1/`. It was removed because `/prometheus/` is no longer publicly proxied by nginx and returns 404. Prometheus queries now only traverse the WAF through the authenticated Grafana proxy endpoint).*
@@ -229,10 +237,12 @@ What keeps this safe:
 Things worth knowing if this is touched again:
 
 - The `array_0` in `json.queries.array_0.expr` is how ModSecurity names the
-  first element of the `queries` JSON array. Each dashboard panel currently
-  sends one query, so `array_0` is enough. A panel with several queries per
-  request (`array_1`, ...) would have its extra queries still inspected and
-  could be blocked again — extend the targets if that happens.
+  first element of the `queries` JSON array. A dashboard panel sends one query
+  (`array_0`). Grafana Explore sends the same query twice (range and instant,
+  `Type: Both`), so `array_1` is covered too. A request with more queries
+  (`array_2`, ... for example Explore with several queries added) would have the
+  extra ones still inspected and could be blocked again: read the target in the
+  audit log and extend the list, do not add targets that were not seen.
 - The `json.` prefix matters here for the same reason as in the avatar
   exclusion (see above).
 
@@ -369,6 +379,191 @@ Things worth knowing if this is touched again:
   in the audit log that the rule fired. A `403` from another rule proves
   nothing about this exclusion.
 
+## `before-crs.conf` — Grafana userstorage (page history)
+
+```apache
+SecRule REQUEST_URI "@beginsWith /grafana/apis/userstorage.grafana.app/" \
+  "id:1000006,\
+  phase:1,\
+  nolog,\
+  pass,\
+  t:none,\
+  ctl:ruleRemoveTargetByTag=attack-sqli;ARGS:json.spec.data.history,\
+  ctl:ruleRemoveTargetByTag=attack-rce;ARGS:json.spec.data.history,\
+  ctl:ruleRemoveTargetById=920230;ARGS:json.spec.data.history,\
+  ctl:ruleRemoveTargetById=941330;ARGS:json.spec.data.history,\
+  ctl:ruleRemoveTargetById=941340;ARGS:json.spec.data.history"
+```
+
+**Symptom:** normal Grafana pages produced `403` on
+`/grafana/apis/userstorage.grafana.app/v0alpha1/namespaces/default/user-storage/...`
+(`POST` and `PATCH`).
+
+**Cause:** Grafana stores the pages the user visited in the `history` field of
+that API. It is a list of URLs, so it holds quotes, `%XX` sequences and
+characters such as `<` or `{`. The audit log showed SQL-injection and
+command-injection rules, `920230` (multiple URL encoding) and two generic XSS
+filters (`941330`, `941340`) matching that field.
+
+**Fix:** the SQL-injection and command-injection groups (tags `attack-sqli`,
+`attack-rce`) and the three rule ids are removed for
+`ARGS:json.spec.data.history` only, and only on this path.
+
+What keeps this safe:
+
+- **Field-scoped and path-scoped.** Every other field of the endpoint, and
+  every other route, keeps every rule.
+- **The other XSS rules still inspect `history`.** A `<script>` payload in that
+  field is still `403`.
+- **The endpoint requires a Grafana login.**
+
+Things worth knowing if this is touched again:
+
+- The field is `ARGS:json.spec.data.history` (`json.` prefix, as in the avatar
+  exclusion).
+- `@beginsWith` is used because the API path is a fixed prefix with the
+  namespace and record id after it.
+
+## `before-crs.conf` — Grafana userstorage (Content-Type)
+
+```apache
+SecRule REQUEST_URI "@beginsWith /grafana/apis/userstorage.grafana.app/" \
+  "id:1000007,\
+  phase:1,\
+  nolog,\
+  pass,\
+  t:none,\
+  setvar:'tx.allowed_request_content_type=|application/x-www-form-urlencoded| |multipart/form-data| |text/xml| |application/xml| |application/soap+xml| |application/json| |application/merge-patch+json|'"
+```
+
+**Symptom:** `PATCH` requests to the userstorage API returned `403`.
+
+**Cause:** Grafana updates the record with `Content-Type:
+application/merge-patch+json` (Kubernetes-style API). Rule `920420` blocks any
+type that is not in `tx.allowed_request_content_type`.
+
+**Fix:** for this path only, the variable is set to the list above, which is
+the default list plus `application/merge-patch+json`. Every other route keeps
+the default list.
+
+Things worth knowing if this is touched again:
+
+- The list must contain every type of the image's default plus the new one,
+  otherwise this path would refuse types it accepted before. Compare it with the
+  default after an image upgrade:
+  ```bash
+  docker compose exec nginx sh -c 'grep -R "allowed_request_content_type" /etc/modsecurity.d/owasp-crs/crs-setup.conf /etc/modsecurity.d/owasp-crs/rules/REQUEST-901-INITIALIZATION.conf'
+  ```
+- `/etc/modsecurity.d/owasp-crs` is a symlink: use `grep -R`, not `grep -r`.
+
+## `before-crs.conf` — Grafana Explore (Referer, `panes` and query history)
+
+Grafana's Explore keeps its whole state in the page URL, in the `panes`
+argument: `panes={"tea":{"datasource":"...","queries":[{"refId":"A","expr":"sum(rate(x[1m])) by (job)"}]}}`.
+That state, and the PromQL in it, reaches the WAF in three places, and the
+SQL-injection and command-injection rules read it as an attack each time. Three
+rules, one per place.
+
+```apache
+SecRule REQUEST_URI "@beginsWith /grafana/" \
+  "id:1000008,\
+  phase:1,\
+  nolog,\
+  pass,\
+  t:none,\
+  ctl:ruleRemoveTargetByTag=attack-sqli;REQUEST_HEADERS:Referer,\
+  ctl:ruleRemoveTargetByTag=attack-rce;REQUEST_HEADERS:Referer"
+
+SecRule REQUEST_URI "@rx ^/grafana/explore(/|\?|$)" \
+  "id:1000009,\
+  phase:1,\
+  nolog,\
+  pass,\
+  t:none,\
+  ctl:ruleRemoveTargetByTag=attack-sqli;ARGS:panes,\
+  ctl:ruleRemoveTargetByTag=attack-rce;ARGS:panes"
+
+SecRule REQUEST_URI "@beginsWith /grafana/api/query-history" \
+  "id:1000010,\
+  phase:1,\
+  nolog,\
+  pass,\
+  t:none,\
+  ctl:ruleRemoveTargetByTag=attack-sqli;ARGS:json.queries.array_0.expr,\
+  ctl:ruleRemoveTargetByTag=attack-rce;ARGS:json.queries.array_0.expr"
+```
+
+Together with the `array_1` target of rule `1000002` (previous section), these
+make Explore with Prometheus usable.
+
+**Symptoms and causes**
+
+| Rule | Symptom | Rules seen in `audit.log` | Variable |
+|---|---|---|---|
+| `1000008` | Explore gave `403` on the files the page loads (`react-monaco-editor.*.js`/`.css`, `login/ping`, `datasources/.../resources/...`); the editor showed "React Monaco Editor failed to load" | `942200`, `942370`, `932206`, `932240` | `REQUEST_HEADERS:referer` |
+| `1000009` | Reloading Explore (F5) gave `403` | `942200`, `942340`, `942370`, `942430`, `932240` | `ARGS:panes` |
+| `1000010` | Running a query gave "Query error 403": Explore also saves it in the history | `932240`, `942150`, `942410`, `942120`, `942131` | `ARGS:json.queries.array_0.expr` |
+
+The browser sends the Explore URL as the `Referer` of every request the page
+makes (`1000008`) and sends it again as a query argument on reload (`1000009`).
+The query itself is sent to `/grafana/api/ds/query` (rule `1000002`, targets
+`array_0` and `array_1`) and to `/grafana/api/query-history` (`1000010`). With
+`up` only the SQL rules fired; a real PromQL query such as
+`sum(rate(x[1m])) by (job)` also trips command-injection rules (`932240`).
+
+**Fix:** the SQL-injection and command-injection groups (tags `attack-sqli`,
+`attack-rce`) are removed for one target each: the `Referer` header on
+`/grafana/` requests, the `panes` argument on `/grafana/explore`, and the PromQL
+field of the query history. A tag is used instead of ids because any query text
+can trip a different rule (same reasoning as for PromQL in `1000002`).
+
+What keeps this safe:
+
+- **Target-scoped and path-scoped.** Every other header, argument, field and
+  route keeps every rule. `panes` sent to another path (for example
+  `/grafana/api/health`) and command injection in another argument of
+  `/grafana/explore` are still blocked.
+- **Only those two groups.** XSS, LFI and the rest of the CRS still inspect the
+  `Referer`, `panes` and the history field. A `<script>` payload in the `Referer`
+  of a `/grafana/` request is still `403`.
+- **The values are not used to build SQL or run commands.** `Referer` is a
+  browser header, `panes` and the history are Explore's own saved state, and
+  Grafana's endpoints require a login. Prometheus is reached only through
+  Grafana's server-side proxy.
+
+Trade-off: on `/grafana/` requests the `Referer` is no longer checked for SQL or
+command injection; the same is true of `panes` on the Explore page and of the
+PromQL field of the history.
+
+Things worth knowing if this is touched again:
+
+- `1000008` uses `@beginsWith /grafana/`, so it does not cover requests outside
+  that prefix. After these rules no `403` on `/favicon.ico` was seen with the
+  Explore page open.
+- Only `array_0` is covered in the query history, and only `array_0` and
+  `array_1` in `/grafana/api/ds/query`. Read the target in the audit log before
+  adding more (filter `grep -v "api/live/ws"`, that websocket floods the log).
+
+## Known limitation: Grafana Explore Traces
+
+**Explore Traces** (`/grafana/a/grafana-exploretraces-app/explore?...`) keeps its
+state in different query arguments (`var-primarySignal=nestedSetParent%3C0`,
+`selection={"...`), on a different path. Rules `942131`, `942200`, `942340` and
+`942430` match them and reloading that page returns `403`.
+
+**Decision: treated as a known limitation, not fixed.**
+
+- The project does not use Explore Traces, and there is no Tempo/Jaeger backend,
+  so the page has nothing to show.
+- Fixing it needs more exclusions on arguments of `/grafana/a/...`; each one
+  opens a client-controlled field for a page nobody uses.
+- The WAF is working as designed: at paranoia level 2, `nestedSetParent<0`
+  looks like SQL.
+
+Other Grafana drilldown apps (Metrics, Logs, Pyroscope are installed) also keep
+state in the URL and have not been tested. If one is adopted later, repeat the
+audit-log analysis for that page. Do not reuse the Explore Traces results.
+
 ## Former Vite dev server false positive (Resolved)
 
 Rule `930121` (Local File Inclusion detection) flags any request whose
@@ -429,6 +624,46 @@ to end, not assumed:
     (the `@rx` does not match this route)
   - The same HTTP codes were obtained after recreating the container
     (`docker compose up -d --force-recreate nginx`).
+- Grafana userstorage (rules `1000006` and `1000007`), curl without a Grafana
+  session (`401` = the WAF let it through, `403` = the WAF blocked it):
+  - `PATCH` with `Content-Type: application/merge-patch+json` and `history` → `401`
+  - `POST` JSON with `history` → `401`
+  - `PATCH` merge-patch with another field → `403`
+  - `POST` with `<script>` in `history` → `403`
+  - `PATCH /users/me` with `application/merge-patch+json` → `403` (the extra
+    type is not open on other routes)
+
+  In the browser, normal Grafana pages give `PATCH 200` and `GET 200` on
+  userstorage.
+- Grafana Explore (rules `1000008`, `1000009`, `1000010` and `1000002`
+  extended to `array_1`): before them, Explore with Prometheus gave `403` on
+  `login/ping` and on the `react-monaco-editor` JS/CSS, the editor failed to
+  load, reloading with F5 gave `403` (`ARGS:panes`), and running a PromQL query
+  gave "Query error 403" (`ARGS:json.queries.array_1.expr` on
+  `/grafana/api/ds/query`, `array_0.expr` on `/grafana/api/query-history`). After
+  them, the editor loads, `up` returns the five targets, and these queries run
+  without `403`:
+  - `sum(rate(nginx_http_requests_total[1m])) by (job)`
+  - `up == 0`
+  - `histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le))`
+  - `rate(nginx_http_requests_total[5m]) * 100 > 0`
+
+  Scope, curl without a Grafana session (`302`/`401` = the WAF let it through):
+  - `' OR 1=1 -- ` in the `Referer` of `/grafana/api/health` → `200`
+  - PromQL in `panes` on `/grafana/explore` → `302`
+  - PromQL in the `Referer` of `/grafana/api/health` → `200`
+  - `;cat /etc/passwd` in another argument (`x`) of `/grafana/explore` → `403`
+  - `;cat /etc/passwd` in `panes` on `/grafana/api/health` → `403`
+  - `<script>` in the `Referer` of `/grafana/api/health` → `403`
+  - `;cat /etc/passwd` in the `Referer` of `/users/me` → `403`
+  - `POST /grafana/api/ds/query` with PromQL in `array_1` → `401`; with
+    `;cat /etc/passwd` in `array_1.legendFormat` → `403`
+  - `POST /grafana/api/query-history` with PromQL in `array_0.expr` → `401`; with
+    `;cat /etc/passwd` in `comment` → `403`
+- Explore Traces is unchanged: its URL still gives `403` on reload (documented
+  limitation).
+- Existing exclusions after the userstorage change: `bash scripts/test-forum.sh`
+  → 11/11 and `bash scripts/test-users.sh` → 19/19.
 
 ## How to test
 
@@ -518,6 +753,100 @@ to end, not assumed:
    to `/kibana`, and reload a few times (the failure depended on the session
    token, so one success is not proof). Then check that `942440` no longer
    shows up in `audit.log` for requests carrying the `sid` cookie.
+9. If touching the Grafana userstorage exclusions (rules `1000006`, `1000007`),
+   check both sides, without a Grafana session. `401` means the WAF let the
+   request through; `403` (nginx page, 548 bytes) means the WAF blocked it.
+   Any record id works:
+   ```bash
+   URL="https://localhost/grafana/apis/userstorage.grafana.app/v0alpha1/namespaces/default/user-storage/test"
+   ```
+   ```bash
+   # must be 401: merge-patch on history
+   curl -sk -o /dev/null -w "%{http_code}\n" -X PATCH "$URL" \
+     -H "Content-Type: application/merge-patch+json" \
+     -d '{"spec":{"data":{"history":"[{\"url\":\"/d/x?a=1'"'"'&b=%2F\"}]"}}}'
+   ```
+   ```bash
+   # must be 403: same type, another field
+   curl -sk -o /dev/null -w "%{http_code}\n" -X PATCH "$URL" \
+     -H "Content-Type: application/merge-patch+json" \
+     -d '{"spec":{"data":{"other":"1'"'"' OR 1=1 -- "}}}'
+   ```
+   ```bash
+   # must be 403: XSS still inspected inside history
+   curl -sk -o /dev/null -w "%{http_code}\n" -X POST "$URL" \
+     -H "Content-Type: application/json" \
+     -d '{"spec":{"data":{"history":"<script>alert(1)</script>"}}}'
+   ```
+   ```bash
+   # must be 403: the extra Content-Type is not open on other routes
+   curl -sk -o /dev/null -w "%{http_code}\n" -X PATCH https://localhost/users/me \
+     -H "Content-Type: application/merge-patch+json" -d '{"username":"x"}'
+   ```
+   Then open the Grafana home, a dashboard (reload with F5) and Explore with
+   Prometheus, and check that no `403` shows up on userstorage:
+   ```bash
+   docker compose logs nginx --since 5m | grep -v 'ModSecurity' \
+     | grep -o '"[A-Z]* [^ ]* HTTP[^"]*" 403' | sed 's/?[^ ]*//; s/page-history:[a-z0-9]*/page-history:ID/' | sort | uniq -c | sort -rn
+   ```
+   `grep ' 403 '` alone over-counts (response sizes, `Referer` text, and two
+   log lines per block).
+10. If touching the Grafana Explore exclusions (rules `1000002` `array_1`,
+   `1000008`, `1000009`, `1000010`), open Explore, choose Prometheus, switch to
+   **Code**, run a real PromQL query and reload with F5:
+   `sum(rate(nginx_http_requests_total[1m])) by (job)`, `up == 0` and
+   `rate(nginx_http_requests_total[5m]) * 100 > 0` must run without `403`. Then
+   check the scope with curl, without a Grafana session (`302`/`401`/`200` = the
+   WAF let it through, `403` = blocked). Run them one at a time:
+   ```bash
+   # must NOT be 403: SQLi in the Referer of a /grafana/ request
+   curl -sk -o /dev/null -w "%{http_code}\n" -H "Referer: https://localhost/grafana/explore?q=1' OR 1=1 -- " "https://localhost/grafana/api/health?t=T1"
+   ```
+   ```bash
+   # must NOT be 403: PromQL in panes on /grafana/explore
+   curl -sk -o /dev/null -w "%{http_code}\n" -G "https://localhost/grafana/explore" --data-urlencode 'panes={"a":{"queries":[{"expr":"sum(rate(nginx_http_requests_total[1m])) by (job)"}]}}'
+   ```
+   ```bash
+   # must NOT be 403: PromQL in the Referer
+   curl -sk -o /dev/null -w "%{http_code}\n" -H 'Referer: https://localhost/grafana/explore?panes={"a":{"queries":[{"expr":"sum(rate(x[1m])) by (job)"}]}}' "https://localhost/grafana/api/health?t=T3"
+   ```
+   ```bash
+   # must be 403: command injection in another argument of the same path
+   curl -sk -o /dev/null -w "%{http_code}\n" -G "https://localhost/grafana/explore" --data-urlencode 'x=;cat /etc/passwd'
+   ```
+   ```bash
+   # must be 403: panes on another path
+   curl -sk -o /dev/null -w "%{http_code}\n" -G "https://localhost/grafana/api/health" --data-urlencode 'panes=;cat /etc/passwd'
+   ```
+   ```bash
+   # must be 403: XSS in the Referer
+   curl -sk -o /dev/null -w "%{http_code}\n" -H "Referer: https://localhost/<script>alert(1)</script>" "https://localhost/grafana/api/health?t=T6"
+   ```
+   ```bash
+   # must be 403: the Referer is still inspected outside /grafana/
+   curl -sk -o /dev/null -w "%{http_code}\n" -H "Referer: https://localhost/grafana/explore?q=;cat /etc/passwd" https://localhost/users/me
+   ```
+   ```bash
+   # must be 401: PromQL in array_1 of the query endpoint
+   curl -sk -o /dev/null -w "%{http_code}\n" -X POST https://localhost/grafana/api/ds/query -H "Content-Type: application/json" -d '{"queries":[{"expr":"up"},{"expr":"sum(rate(x[1m])) by (job)"}]}'
+   ```
+   ```bash
+   # must be 403: command injection in legendFormat of array_1
+   curl -sk -o /dev/null -w "%{http_code}\n" -X POST https://localhost/grafana/api/ds/query -H "Content-Type: application/json" -d '{"queries":[{"expr":"up"},{"expr":"x","legendFormat":";cat /etc/passwd"}]}'
+   ```
+   ```bash
+   # must be 401: PromQL in the query history
+   curl -sk -o /dev/null -w "%{http_code}\n" -X POST https://localhost/grafana/api/query-history -H "Content-Type: application/json" -d '{"datasourceUid":"x","queries":[{"expr":"sum(rate(x[1m])) by (job)"}]}'
+   ```
+   ```bash
+   # must be 403: command injection in another field of the history
+   curl -sk -o /dev/null -w "%{http_code}\n" -X POST https://localhost/grafana/api/query-history -H "Content-Type: application/json" -d '{"datasourceUid":"x","comment":";cat /etc/passwd","queries":[{"expr":"up"}]}'
+   ```
+   If a query still gives `403`, read the target in the audit log, ignoring the
+   websocket noise:
+   ```bash
+   docker compose exec nginx sh -c 'grep -v "api/live/ws" /var/log/modsecurity/audit.log | tail -n 6 | grep -oE "\"uri\":\"[^\"]{0,60}|against variable .[A-Za-z_:.0-9-]*|ruleId\":\"[0-9]*"'
+   ```
 
 ## Status
 
@@ -549,3 +878,13 @@ to end, not assumed:
 - [x] Kibana `sid` exclusion scoped to `/kibana` with a runtime rule
       (`1000005`) in `before-crs.conf`; scope verified (step 8 of
       *How to test*)
+- [x] Grafana userstorage `history` exclusion added (`1000006`), scoped by tag
+      and rule id to `ARGS:json.spec.data.history` on that path only
+- [x] `application/merge-patch+json` allowed for the userstorage path only
+      (`1000007`, rule `920420`)
+- [x] Grafana Explore with Prometheus: `Referer` (`1000008`), `panes` (`1000009`)
+      and query history (`1000010`) exclusions added, SQL-injection and
+      command-injection groups only, each for one target on its own path;
+      `1000002` extended to `queries.array_1`
+- [x] Known limitation documented: Grafana Explore Traces (and untested
+      drilldown apps) return `403` on reload; accepted, not fixed
