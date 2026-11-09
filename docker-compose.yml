@@ -10,6 +10,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      postgres_app_user_init:
+        condition: service_completed_successfully
     command: ["npx", "prisma", "migrate", "deploy"]
     restart: on-failure
 
@@ -209,6 +211,8 @@ services:
       VAULT_CACERT: ${VAULT_CACERT}
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      APP_DB_USER: ${APP_DB_USER}
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD}
       REDIS_PASSWORD: ${REDIS_PASSWORD}
       ADMIN_API_KEY: ${ADMIN_API_KEY}
       ADMIN_USERNAME: ${ADMIN_USERNAME}
@@ -327,6 +331,25 @@ services:
       retries: 5
       start_period: 10s
     restart: unless-stopped
+
+  postgres_app_user_init:
+    container_name: postgres_app_user_init
+    image: postgres:16
+    networks:
+      - transcendence
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      APP_DB_USER: ${APP_DB_USER}
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD}
+    volumes:
+      - ./postgres/init/ensure-app-user.sh:/ensure-app-user.sh:ro
+    entrypoint: ["sh", "/ensure-app-user.sh"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: on-failure
 
   postgres_backup:
     container_name: postgres_backup

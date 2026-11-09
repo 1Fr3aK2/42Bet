@@ -38,6 +38,17 @@ The `postgres_backup` service (`docker-compose.yml`) runs continuously and calls
 No further setup is needed for backups to exist — this section documents what
 already runs automatically; the rest of this document covers how to use it.
 
+**What a backup does not contain: roles.** `pg_dump` dumps one database, not
+cluster-level objects such as roles. The backend's least-privilege role
+(`app_user`, audit finding S9) and its password are therefore not in the
+backup: the `postgres_app_user_init` service recreates them from `.env` on
+every `docker compose up`. `scripts/backup-postgres.sh` calls `pg_dump` without `--no-acl`, so the dump
+does include the table-level `GRANT` statements and default privileges for
+`app_user`, but those only apply if the role already exists when the dump is
+restored. The restore procedure below therefore also reapplies the role's
+privileges explicitly (step 2.6), as a safeguard. If `--no-acl` is ever added
+to the backup script, that step becomes mandatory.
+
 ---
 
 ## 2. Restoring the database from a backup
@@ -100,6 +111,11 @@ docker compose exec -T postgres sh -c \
 (Connecting to the default `postgres` maintenance database to run these two
 statements, since a database cannot drop itself while connected to it.)
 
+Dropping the database does not drop `app_user`: roles belong to the cluster,
+not to a database. A freshly created database starts without the
+`GRANT`s that `app_user` had on the old one; the restore in step 2.5 brings
+them back from the dump, and step 2.6 guarantees them.
+
 ### 2.5 Restore the chosen backup
 
 ```bash
@@ -111,9 +127,27 @@ docker compose exec -T postgres sh -c \
 Replace `<TIMESTAMP>` with the filename chosen in step 2.1. Watch the output for
 errors — a plain-text `psql` restore does not stop on the first error by
 default, so scroll back through the output rather than assuming silence means
-success.
+success. An error such as `role "app_user" does not exist` means the role was
+missing when the dump was restored; it is fixed by step 2.6.
 
-### 2.6 Restart the application services
+### 2.6 Reapply the backend's database role
+
+Recreate `app_user` if needed and reapply its privileges on the restored
+database. The `postgres_app_user_init` service is idempotent, so running it
+again is always safe:
+
+```bash
+docker compose up -d postgres_app_user_init
+docker compose ps -a postgres_app_user_init
+```
+
+The service must end as `Exited (0)`. The dump already carries these
+privileges, so this step normally changes nothing. It matters when the role
+did not exist at restore time (for example, a brand-new cluster) or if the
+backup is ever taken with `--no-acl`: in those cases the backend would start
+and then fail with `permission denied`.
+
+### 2.7 Restart the application services
 
 ```bash
 docker compose up -d backend
@@ -125,7 +159,7 @@ database. If Prisma's migration state table was part of the restored dump, the
 schema and migration history are already consistent — no need to re-run
 migrations.)
 
-### 2.7 Verify
+### 2.8 Verify
 
 Confirm that the core stack is healthy:
 
@@ -147,7 +181,8 @@ docker compose exec backend wget -qO- http://localhost:8000/health
 Confirm `"database": "up"` in the output.
 
 Finally, spot-check the restored data through the application itself (log in,
-check that expected records are present).
+check that expected records are present). If the application reports
+`permission denied` errors in `docker compose logs backend`, repeat step 2.6.
 
 ---
 
@@ -160,7 +195,7 @@ volume — including `postgres-data`, `redis-data`, `elasticsearch-data`,
 
 | Volume | Recoverable? | How |
 |---|---|---|
-| `postgres-data` | Yes | Restore from `backups/postgres/` as in Section 2 (the bind-mounted directory is not touched by volume removal) |
+| `postgres-data` | Yes | Restore from `backups/postgres/` as in Section 2, once the stack is back up (the bind-mounted directory is not touched by volume removal). The stack's own startup recreates `app_user` first, because roles are not part of the dump |
 | `elasticsearch-data` | Not meaningfully | Logs/audit data are not currently backed up separately; loss is acceptable since ILM already limits their value to 14 days of operational data, not a system of record |
 | `redis-data` | No | Acceptable loss — Redis here is used as a cache/session store, not a source of truth |
 | `grafana-db`, `prometheus-data` | No | Acceptable loss — dashboards are defined as code in `monitoring/grafana/provisioning` and are recreated automatically on next boot; metrics history is not required to survive a rebuild |
@@ -206,7 +241,9 @@ keys are gone, the secrets are gone.
   current `.env` values (`JWT_SECRET`, `ADMIN_PASSWORD`, `ADMIN_API_KEY`, etc.)
   and writes them into the freshly initialized Vault, so the *values* the
   application ends up using come from the `.env` file, not from any backup of
-  Vault itself.
+  Vault itself. This includes the database credentials: `secret/postgres`
+  is rewritten from `APP_DB_USER`/`APP_DB_PASSWORD`, the same values
+  `postgres_app_user_init` uses to create `app_user`, so the two stay in sync.
 
 ### Mitigation
 
@@ -231,10 +268,11 @@ Since there is no after-the-fact recovery, the mitigation is preventive:
   this by default** — `vault_init.sh` now revokes it automatically once
   bootstrap completes, as a security hardening measure. A fresh root token
   has to be generated first, using the unseal key shares (still valid; only
-  the root token itself was revoked):
+  the root token itself was revoked). On Vault 2.x, `generate-root` also
+  requires a valid token, so a plain `-init` returns
+  `403 permission denied`: follow "Recovering a root token on Vault 2.x"
+  in `vault/VAULT_PROD_MODE.md` to obtain the token, then:
   ```bash
-  docker compose exec vault vault operator generate-root -init
-  # supply 3 of the 5 unseal key shares from init.json when prompted
   docker compose exec vault sh -c 'VAULT_TOKEN=<new_root_token> vault kv put secret/jwt secret="<new_value>"'
   ```
   Update `.env` as well, so a future full reinitialization stays consistent
@@ -256,7 +294,7 @@ Since there is no after-the-fact recovery, the mitigation is preventive:
 
 | Failure | Recoverable? | Procedure |
 |---|---|---|
-| Database corrupted/lost | Yes | Section 2 — restore from `backups/postgres/*.sql` |
+| Database corrupted/lost | Yes | Section 2 — restore from `backups/postgres/*.sql`, then reapply `app_user` (step 2.6) |
 | Full volume wipe (`make re`) — app data (Postgres, Redis, ES, Grafana, Prometheus) | Partially | Postgres via Section 2; the rest is acceptable, regenerable loss |
 | Full volume wipe (`make re`) — Vault | No, by design | Vault reinitializes from `.env`; see Section 4 |
 | Vault sealed after a partial restart (keys intact) | Yes | `vault operator unseal`, Section 4 |

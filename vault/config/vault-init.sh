@@ -53,7 +53,7 @@ fi
 vault secrets enable -path=secret -version=2 kv 2>/dev/null || true
 
 # 4. Store secrets (idempotent — vault kv put overwrites without failing)
-vault kv put secret/postgres user="${POSTGRES_USER}" password="${POSTGRES_PASSWORD}"
+vault kv put secret/postgres user="${APP_DB_USER}" password="${APP_DB_PASSWORD}"
 vault kv put secret/redis password="${REDIS_PASSWORD}"
 vault kv put secret/admin-api key="${ADMIN_API_KEY}"
 vault kv put secret/admin-account username="${ADMIN_USERNAME}" email="${ADMIN_EMAIL}" password="${ADMIN_PASSWORD}"

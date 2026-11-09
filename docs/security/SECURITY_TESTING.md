@@ -217,6 +217,38 @@ curl http://localhost:8200/v1/secret/data/postgres
 
 ---
 
+### Test 9 — Postgres: Backend Runs With Least-Privilege Role
+
+**Objective**: Verify that the backend's database role cannot perform schema
+changes or escape to the host, even with valid credentials.
+
+**Attack vector**: Authenticated session as `app_user` (the role the backend
+actually connects as), attempting DDL, role creation, and external-program COPY.
+
+**Commands**:
+```bash
+docker compose exec postgres sh -c 'psql -U app_user -d $POSTGRES_DB'
+```
+```sql
+CREATE TABLE teste (id int);
+CREATE ROLE outro_user;
+COPY "User" TO PROGRAM 'id';
+```
+
+**Result obtained**: all three return `permission denied` (`for schema public`,
+`to create role`, `to COPY to or from an external program`, respectively). A
+plain `SELECT` on an application table succeeds.
+
+**Expected result**: ✅ DDL/role-creation/program-execution denied, read access allowed
+
+**Conclusion**: the backend no longer runs as `POSTGRES_USER` (superuser);
+`app_user`, provisioned idempotently by the `postgres_app_user_init` service
+(`postgres/init/ensure-app-user.sh`), has only the DML privileges the
+application needs. `backend_migrate` is the only service that still connects
+as the superuser, since Prisma migrations require DDL.
+
+---
+
 ## Results Summary
 
 | # | Service | Attack Vector | Result | Status |
@@ -229,6 +261,7 @@ curl http://localhost:8200/v1/secret/data/postgres
 | 6 | WAF/nginx | Path Traversal | 404 Not Found | ✅ Secure |
 | 7 | WAF/nginx | Command Injection | 403 Forbidden | ✅ Blocked |
 | 8 | Vault | Access without token | Permission denied (dev-mode result; now confirmed stale — HTTP against port 8200 fails at the TLS level, not with this JSON body) | ⚠️ Needs re-run with `--cacert` against HTTPS to get a current result |
+| 9 | Postgres | Backend role attempts DDL/role-creation/program-execution | `permission denied` on all three; `SELECT` allowed | ✅ Secure |
 
 ---
 
@@ -242,6 +275,7 @@ curl http://localhost:8200/v1/secret/data/postgres
 | SSL certificates | `mkcert` (self-signed, local) | Use Let's Encrypt or a real certificate |
 | ~~Vault root token~~ | **Resolved** — the root token is now used only for the initial bootstrap (secrets, policy, AppRole) and automatically revoked by `vault_init.sh` immediately afterward; every subsequent authentication uses a scoped AppRole token. See `VAULT_PRODUCTION.md`, "Idempotent bootstrap and root token revocation" | — |
 | AppRole credentials (RoleID/SecretID) | **Improved** — now persisted to files under the `vault-approle` volume and consumed directly by `backend`/`backend_seed`, rather than only printed to stdout and requiring manual capture; see `SECURITY_REPORT.md` §3 | Confirm these files are never included in any backup or export that leaves the host unencrypted |
+| ~~Backend uses Postgres superuser~~ | **Resolved** — `app_user`, provisioned idempotently by `postgres_app_user_init`, has only `SELECT`/`INSERT`/`UPDATE`/`DELETE` on application tables, including tables that already existed before the change; see Test 9 and `SECURITY_REPORT.md` §2 | — |
 
 ---
 
@@ -259,6 +293,8 @@ Status updated — several items below are no longer future work:
   previously-hardcoded fallback secret (`'secret'`) was confirmed accepted
   *before* the fix and rejected (`401`) *after* it, using `GET /auth/me`. See
   `AUTH_HARDENING_REPORT.md` §2.
+- ~~Postgres — verify the backend cannot perform DDL or escape to the host~~ —
+  **done.** See Test 9 above.
 - **CORS** — verify that only allowed origins can access the API. Not yet
   tested; still open.
 - **Input validation** — verify that the backend rejects malformed input the

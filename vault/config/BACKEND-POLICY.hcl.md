@@ -56,6 +56,15 @@ grant access to them unless explicitly extended.
 | `secret/data/admin-account` | `ADMIN_USERNAME`/`ADMIN_EMAIL`/`ADMIN_PASSWORD` | `backend_seed` (creates the admin account on first run) |
 | `secret/data/jwt` | `JWT_SECRET` (token signing) | `backend` |
 
+> **Note (S9 hardening):** `secret/data/postgres` now holds the credentials
+> of `app_user`, a least-privilege database role provisioned idempotently by
+> the `postgres_app_user_init` service (`SELECT`/`INSERT`/`UPDATE`/`DELETE` on
+> application tables only — no DDL, no role creation, no external-program
+> `COPY`), not the `POSTGRES_USER` superuser's. The path and the field names
+> (`user`, `password`) are unchanged — only the value stored at that path
+> changed, in `vault-init.sh`. See `SECURITY_REPORT.md` §2 and
+> `SECURITY_TESTING.md` Test 9.
+
 ## How it's used
 
 The policy is loaded into Vault and attached to an AppRole
