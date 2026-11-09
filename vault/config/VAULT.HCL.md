@@ -104,21 +104,25 @@ Everything the config depends on is now in place.
 ### Healthcheck
 
 ```yaml
-test: ["CMD-SHELL", "vault status; [ $? -ne 1 ]"]
+test: ["CMD", "vault", "status"]
 ```
 
 `vault status` exits with `0` when unsealed, `2` when sealed, and `1` on error
-(e.g. the server isn't reachable yet). The container is considered healthy as
-long as the exit code is **not** `1`, so a sealed Vault still counts as
-healthy. This is intentional: Vault starts sealed after every restart, and
-unsealing is done by `vault_init`, which itself waits for `vault` to be
-healthy. If sealed counted as unhealthy, the stack would deadlock.
+(e.g. the server isn't reachable yet). The container is considered healthy **only**
+when `vault status` exits with `0` (initialized and unsealed). A sealed Vault
+correctly reports as `unhealthy`, which prevents downstream services (`backend`,
+`backend_seed`) from attempting to read secrets against a locked storage engine.
+
+The circular deadlock is resolved not by masking exit code 2, but by having
+`vault_init` depend on `vault` with `condition: service_started` instead of
+`service_healthy` (see Startup order below).
 
 ### Init and unseal (`vault_init` → `vault-init.sh`)
 
 `vault_init` is a one-shot container (`restart: on-failure`) that runs
-`vault-init.sh` once the `vault` service is healthy. The script is idempotent
-and does, in order:
+`vault-init.sh` once the `vault` service has started. The script polls until Vault's
+API is accessible (exit code `0` or `2`), then performs the bootstrap. The script is
+idempotent and does, in order:
 
 1. **Initialize** (`vault operator init -key-shares=5 -key-threshold=3`) only
    if `/vault/keys/init.json` doesn't exist yet. The output (unseal keys and
@@ -154,15 +158,14 @@ The keys live in the `vault-keys` volume and the AppRole credentials in the
 ### Startup order
 
 ```
-vault-data-init ─▶ vault ─▶ vault_init ─▶ backend_seed ─▶ backend
-                    ▲            ▲
-        (healthy)───┘            └── vault-keys-init, vault-approle-init
+vault-data-init ─▶ vault ──(started)──▶ vault_init ──▶ backend_seed ─▶ backend
+                    │                        ▲             ▲               ▲
+                    └───(healthy)────────────┼─────────────┴───────────────┘
+                                             └── vault-keys-init, vault-approle-init
 ```
 
-`backend` waits for `vault` (healthy) and `vault_init` (completed
-successfully), so it never starts before Vault is initialized, unsealed and
-populated. `backend_seed` also waits for `vault_init`, since seeding needs
-the AppRole credentials.
+- `vault_init` waits for `vault` (`service_started`), eliminating startup deadlock.
+- `backend` and `backend_seed` wait for `vault` (`service_healthy`, i.e., unsealed) and `vault_init` (`service_completed_successfully`), ensuring they never run against a sealed or uninitialized Vault.
 
 ## Architecture trade-offs & Security notes
 
