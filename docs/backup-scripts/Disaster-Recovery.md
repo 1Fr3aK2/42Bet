@@ -268,10 +268,11 @@ Since there is no after-the-fact recovery, the mitigation is preventive:
   this by default** — `vault_init.sh` now revokes it automatically once
   bootstrap completes, as a security hardening measure. A fresh root token
   has to be generated first, using the unseal key shares (still valid; only
-  the root token itself was revoked):
+  the root token itself was revoked). On Vault 2.x, `generate-root` also
+  requires a valid token, so a plain `-init` returns
+  `403 permission denied`: follow "Recovering a root token on Vault 2.x"
+  in `vault/VAULT_PROD_MODE.md` to obtain the token, then:
   ```bash
-  docker compose exec vault vault operator generate-root -init
-  # supply 3 of the 5 unseal key shares from init.json when prompted
   docker compose exec vault sh -c 'VAULT_TOKEN=<new_root_token> vault kv put secret/jwt secret="<new_value>"'
   ```
   Update `.env` as well, so a future full reinitialization stays consistent

@@ -170,8 +170,9 @@ re-provision anything with a token that's already gone. The AppRole's
 removing a previously-documented limitation around long-running backend
 instances. Full detail, including the correct way to update a Vault secret
 now that the root token isn't available by default
-(`vault operator generate-root -init`, using the still-valid unseal key
-shares): `VAULT_PRODUCTION.md`.
+(`vault operator generate-root`, using the still-valid unseal key shares;
+on Vault 2.x this also requires a temporary `enable_unauthenticated_access`
+setting, since the endpoint now needs a token): `VAULT_PROD_MODE.md`.
 
 ---
 

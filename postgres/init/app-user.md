@@ -189,9 +189,10 @@ environment: pulling this change and running `make update` provisions
 however, only switches to `app_user` once `secret/postgres` in Vault holds its
 credentials. Vault's root token is revoked after the first bootstrap, so
 re-running `vault_init` does not rewrite the secret (see `VAULT_PRODUCTION.md`,
-"Practical consequence"). On an existing environment, update `secret/postgres`
-with `vault operator generate-root` and `vault kv put`, or rebuild with
-`make re`.
+"Practical consequence"). On an existing environment, generate a new root token and update
+`secret/postgres` with `vault kv put` (on Vault 2.x, `generate-root` first
+needs a temporary configuration change — see `VAULT_PROD_MODE.md`,
+"Recovering a root token on Vault 2.x"), or rebuild with `make re`.
 
 ### Interaction with migrations
 
