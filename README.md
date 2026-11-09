@@ -418,7 +418,10 @@ moderation AI (our moderation is rule-based, not AI).
 - HashiCorp Vault in server mode with AppRole, and loading the secrets into the backend.
 - ELK stack, Prometheus, Grafana, exporters and alert rules; health checks, status page, backups and disaster recovery; security documentation in `docs/`.
 - Reviews and merges of the pull requests.
-- Challenges: <!-- TODO(Rafael) -->
+- Challenges:
+  - Vault production mode required moving from `-dev` to persistent Raft storage with TLS. Resolving the startup order without deadlock required separating `service_started` on `vault_init` from `service_healthy` (unsealed validation) on dependant services.
+  - ModSecurity CRS false positives: tuned rules for Grafana Live WebSockets, PromQL syntax and sanitized outbound 5xx server responses (Rule 950100) so real HTTP error semantics are preserved.
+  - Enforcing database least privilege (S9) by introducing `app_user` with strictly DML privileges, isolating migrations (`backend_migrate` as superuser) from runtime connections.
 
 ### Pedro Silva
 
@@ -496,8 +499,7 @@ moderation AI (our moderation is rule-based, not AI).
 - Filebeat reads the logs of every Docker container on the host, not only this
   project's.
 - The certificates are self-signed, so the browser shows a warning the first time.
-- After a reboot, run `make down` and then `make`, so that Vault is unsealed
-  before the backend starts.
+- If Vault restarts independently without the init service, it enters a sealed state; Docker's healthcheck detects this (`unhealthy`) and prevents the backend from booting until `docker compose up -d vault_init` unseals it.
 
 ## Credits
 

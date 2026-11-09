@@ -102,8 +102,8 @@ common attack vectors. Full detail in `SECURITY_TESTING.md`.
   `permission denied` as `app_user`, reads on application tables work, and
   `pg_stat_activity` shows the backend connecting as `app_user`. With the backend
   running as `app_user`, `test-bets.sh` (54/54) and `test-users.sh` (19/19) pass,
-  and `test-security.sh` reports 23 OK; its only two failures are findings owned
-  by other modules (S3a, forum search length; S6, avatar content check).
+  and `test-security.sh` reports 24 OK; its only remaining failure is S6 (avatar
+  content check, owned by Miguel). S3a (forum search length) was resolved by Hugo.
 - Exposed Redis/Postgres ports and self-signed certificates remain accepted
   trade-offs for this project's scope (not production deployment);
   documented rather than silently ignored.
@@ -430,6 +430,12 @@ request instead of caching for the container's lifetime) was identified but
 deliberately not applied** — logged here as a known, accepted trade-off for
 this project's scope rather than a silently dropped item.
 
+**Response-phase WAF masking fix applied:** CRS rule `950100` (which scored any
+upstream `5xx` error in phase 4 and triggered rule `959100` to mask server errors
+as `403 Forbidden`) was removed via `SecRuleRemoveById 950100` in `before-crs.conf`.
+This ensures upstream error semantics (`500`, `502`, `503`) are surfaced accurately
+to clients and monitoring tools rather than masquerading as security violations.
+
 ---
 
 ## 10. Swagger / Admin API Documentation Exposure & Usability
@@ -485,7 +491,10 @@ least privilege for the backend); what remains open:
 - Working `RateLimiterService` (NestJS, reused across login, forum, and the Admin Public API)
 - `backend_migrate` and `backend_seed` services (automated, ordered database setup)
 - `elasticsearch_ilm_init` and `kibana_user_init` services (automated, idempotent ELK configuration)
-- Hardened Vault deployment (real init/unseal, TLS, persisted AppRole credentials)
+- Hardened Vault deployment (real init/unseal, TLS, persisted AppRole credentials,
+  unsealed healthcheck validation and deadlock-free startup ordering)
+- WAF response-phase rule tuning (disabled rule 950100 to preserve genuine 5xx error semantics)
+- Dedicated Nginx proxy location for Grafana Live WebSockets (`/grafana/api/live/`)
 - Aggregated health check (`/health`, `/health/status`) and standalone status page
 - Least-privilege Postgres role (`app_user`) for all backend runtime
   connections, provisioned idempotently by `postgres_app_user_init` on every
