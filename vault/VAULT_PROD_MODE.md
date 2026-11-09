@@ -179,12 +179,105 @@ be picked up by just re-running `vault_init` anymore.
 The correct way to update a secret now, without a full volume wipe, is to
 generate a fresh root token using the unseal key shares (still valid —
 revoking the root token does not invalidate the unseal keys), then use it
-directly:
+directly. On Vault 2.x, generating that token requires a temporary
+configuration change first — see "Recovering a root token on Vault 2.x"
+below.
+
+#### Recovering a root token on Vault 2.x
+
+Since Vault 2.0.0 (CVE-2026-5807, HashiCorp bulletin HCSEC-2026-08),
+`sys/generate-root` is no longer unauthenticated: in addition to the unseal
+key shares, it requires a valid Vault token. Because this project revokes
+the root token at the end of the bootstrap, a plain
+`docker compose exec vault vault operator generate-root -init` fails on
+Vault 2.x with:
+
+```
+Code: 403. Errors:
+* permission denied
+```
+
+This error is returned by Vault itself — the request goes straight to
+`https://vault:8200`, bypassing Nginx and the WAF. It was reproduced on
+Vault v2.0.4 and v2.2.1.
+
+HashiCorp's supported workaround is the `enable_unauthenticated_access`
+setting, a **list** of endpoint names (`"generate-root"`, `"rekey"`,
+`"generate-operation-token"`) for which the previous unauthenticated
+behavior is restored. Enable it only for the duration of this procedure:
+
+1. Add this line to the top level of `vault/config/vault.hcl`. It must be a
+   list: `enable_unauthenticated_access = true` is rejected and Vault fails
+   to start with `unknown slice type`.
+
+   ```hcl
+   enable_unauthenticated_access = ["generate-root"]
+   ```
+
+2. Restart Vault so it re-reads the file, and unseal it again (see
+   "Operational Note: Vault Restarts" below):
+
+   ```bash
+   docker compose restart vault
+   docker compose up -d vault_init
+   ```
+
+3. Start the root token generation and note the `Nonce` and the `OTP`:
+
+   ```bash
+   docker compose exec vault vault operator generate-root -init
+   ```
+
+4. Submit 3 of the 5 unseal key shares (`unseal_keys_b64` in `init.json` on
+   the `vault-keys` volume), one per command. When the key is passed as an
+   argument, the `-nonce` flag is required; alternatively, run the command
+   without arguments and paste each key at the hidden prompt. `Progress`
+   goes `1/3`, `2/3`, `3/3`:
+
+   ```bash
+   docker compose exec vault vault operator generate-root -nonce=<nonce> "<unseal_key>"
+   ```
+
+5. After the third key, the output contains an `Encoded Token`. Decode it
+   with the OTP from step 3:
+
+   ```bash
+   docker compose exec vault vault operator generate-root \
+     -decode=<encoded_token> -otp=<otp>
+   ```
+
+   The result (`hvs....`) is the new root token. To abort an in-progress
+   generation and start over, use `vault operator generate-root -cancel`;
+   the nonce and OTP of the cancelled attempt are no longer valid.
+
+6. Use the token (see "Updating the secret" below), then clean up: revoke
+   it, remove the `enable_unauthenticated_access` line from `vault.hcl`,
+   and restart and unseal Vault again.
+
+   ```bash
+   docker compose exec -e VAULT_TOKEN=<new_root_token> vault vault token revoke -self
+   ```
+
+   If a generation was started and not completed, cancel it **before**
+   removing the line (`docker compose exec vault vault operator
+   generate-root -cancel`): once the setting is gone, the cancel request
+   needs a token like any other call to this endpoint.
+
+> **Warning:** while `enable_unauthenticated_access` is set, anyone who can
+> reach the Vault API can start or cancel a root token generation and block
+> operators from completing it — the denial of service that Vault 2.0.0
+> fixed. Keep the setting only for the duration of this procedure and never
+> commit it to the repository.
+
+`init.json` also contains the (already revoked) initial root token and all
+the unseal key shares; treat its contents as sensitive and do not paste them
+into issues, pull requests or chats.
+
+#### Updating the secret
+
+With the new root token:
 
 ```bash
-docker compose exec vault vault operator generate-root -init
-# follow the prompts, supplying 3 of the 5 unseal key shares from init.json,
-# to obtain a new, valid root token
 docker compose exec vault sh -c 'VAULT_TOKEN=<new_root_token> vault kv put secret/jwt secret="<new_value>"'
 ```
 
@@ -278,6 +371,11 @@ surfaced several real bugs:
 9. **AppRole credentials only ever logged, never persisted** — see "AppRole
    credential persistence" above; fixed by writing `role_id`/`secret_id` to
    the `vault-approle` volume instead of relying on `docker compose logs`.
+10. **`generate-root` returning `403` on Vault 2.x** — found while testing
+    the S9 change on an existing environment. Not a bug in this project:
+    Vault 2.0.0 made `sys/generate-root` require a valid token. The
+    documented procedure was updated instead — see "Recovering a root token
+    on Vault 2.x" above.
 
 ## How to test
 
@@ -309,3 +407,13 @@ surfaced several real bugs:
    up, confirm the backend connects as `app_user`:
    `docker compose exec postgres sh -c 'psql -U $POSTGRES_USER -d $POSTGRES_DB -c "SELECT usename, count(*) FROM pg_stat_activity WHERE datname = current_database() GROUP BY usename;"'`
    — an `app_user` row must appear.
+9. **Root token recovery on Vault 2.x.** On the clean start from step 1
+   (root token already revoked): `docker compose exec vault vault operator
+   generate-root -init` must return `403 permission denied`. Then follow
+   "Recovering a root token on Vault 2.x" — with
+   `enable_unauthenticated_access = ["generate-root"]` set, `-init` must
+   return a `Nonce` and an `OTP`, and after 3 unseal keys and the decode
+   step the new token must show the `root` policy
+   (`docker compose exec -e VAULT_TOKEN=<new_root_token> vault vault token
+   lookup`). Finish by revoking the token and removing the setting, and
+   confirm `-init` returns `403` again.
