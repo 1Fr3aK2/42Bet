@@ -1,6 +1,6 @@
 # Postgres Least-Privilege User (`postgres/init/ensure-app-user.sh`)
 
-Rafael Matos · ft\_transcendence · 05/11/2026 · Audit finding S9
+Rafael Matos · ft\_42Bet · 05/11/2026 · Audit finding S9
 
 ## What it does
 
@@ -146,7 +146,7 @@ connection URL from it and special characters would need escaping.
     container_name: postgres_app_user_init
     image: postgres:16
     networks:
-      - transcendence
+      - 42Bet
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
