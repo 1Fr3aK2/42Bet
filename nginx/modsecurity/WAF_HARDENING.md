@@ -848,6 +848,24 @@ to end, not assumed:
    docker compose exec nginx sh -c 'grep -v "api/live/ws" /var/log/modsecurity/audit.log | tail -n 6 | grep -oE "\"uri\":\"[^\"]{0,60}|against variable .[A-Za-z_:.0-9-]*|ruleId\":\"[0-9]*"'
    ```
 
+## `before-crs.conf` — Upstream 5xx response masking (Rule 950100)
+
+```apache
+SecRuleRemoveById 950100
+```
+
+**Symptom:** Upstream server errors (such as unhandled exceptions in `PATCH /users/me` or temporary DNS/connection issues producing 500/502) returned `403 Forbidden` to the client instead of the actual error status.
+
+**Cause:** In Phase 4 (outbound response inspection), CRS rule `950100` matches any `5xx` status code (`RESPONSE_STATUS @rx ^5\d{2}$`) and adds to the outbound anomaly score. Rule `959100` then intercepts the response because the threshold is reached, replacing the upstream 5xx response with a generic WAF `403 Forbidden`.
+
+**Fix:** Rule `950100` is removed via `SecRuleRemoveById 950100`. This allows upstream server errors to be surfaced accurately to client applications and monitoring tools (`500`, `502`, `503`, `504`) instead of masking them behind misleading security blocks.
+
+What keeps this safe:
+- **Inbound inspection is unaffected.** All SQLi, XSS, RCE, LFI and anomaly detection rules in Phase 1 and 2 remain active.
+- **Data leakage content rules remain active.** Rules that inspect response bodies for sensitive information (`951xxx`–`955xxx`) continue to operate.
+- **NestJS sanitizes internal errors.** In production, unhandled exceptions return sanitized JSON (`{"statusCode": 500, "message": "Internal server error"}`) and do not leak stack traces.
+
+
 ## Status
 
 - [x] `PARANOIA`/`BLOCKING_PARANOIA` raised from default (1) to 2
@@ -888,3 +906,4 @@ to end, not assumed:
       `1000002` extended to `queries.array_1`
 - [x] Known limitation documented: Grafana Explore Traces (and untested
       drilldown apps) return `403` on reload; accepted, not fixed
+- [x] Upstream 5xx masking rule 950100 removed; real HTTP error semantics preserved for clients and monitoring
