@@ -336,7 +336,7 @@ services:
     container_name: postgres_app_user_init
     image: postgres:16
     networks:
-      - transcendence
+      - 42Bet
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}

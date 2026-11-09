@@ -6,17 +6,19 @@ Documentation for the nginx configuration (reverse proxy + WAF) of the
 > **Note on this revision:** this document has been updated to match the
 > current `default.conf.template`. The rate limiting, security headers (including
 > `Content-Security-Policy`), nginx version hiding (`server_tokens off`), the
-> public health check (aggregated state only), and per-module routing sections
-> below reflect the live configuration.
+> public health check (aggregated state only), the Grafana Live WebSocket route
+> and per-module routing sections below reflect the live configuration.
 
 ## General structure
 
 The file defines two `server{}` blocks:
 
 - **Port `${PORT}` (80)** — only exists to redirect all HTTP traffic to HTTPS (`301`), and to expose `/stub_status` (used by the container's healthcheck and by Prometheus's `nginx_exporter`).
-- **Port `${SSL_PORT}` (443)** — where all the real logic lives: TLS, WAF (ModSecurity), security headers, rate limiting, and the proxy to the various internal services (frontend, backend, Grafana, Prometheus, Kibana, and the static status page).
+- **Port `${SSL_PORT}` (443)** — where all the real logic lives: TLS, WAF (ModSecurity), security headers, rate limiting, and the proxy to the various internal services (frontend, backend, Grafana, Kibana, and the static status page; Prometheus is deliberately not published).
 
 Variables (`${PORT}`, `${SERVER_NAME}`, `${SSL_CERT_FILE}`, etc.) are substituted at startup by the `envsubst` mechanism in the `owasp/modsecurity-crs` image, from the values defined under `environment:` in `docker-compose.yml`. **The filename must end in `.template`** — that suffix is what the image's startup script uses to know which files to process.
+
+Because the substitution only happens when the container starts, **editing the template is not enough: recreate the container** (`docker compose up -d --force-recreate nginx`) and check the active config with `docker compose exec nginx nginx -T`.
 
 The directives at the top of the file (`server_tokens`, `map`, `limit_req_zone`) live outside any `server{}` block: the image includes this file inside the main `http{}` context, so they apply to both servers.
 
@@ -68,14 +70,14 @@ modsecurity on;
 add_header X-Content-Type-Options "nosniff" always;
 add_header X-Frame-Options "DENY" always;
 add_header Referrer-Policy "strict-origin-when-cross-origin" always;
-add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' ws: wss:; frame-ancestors 'none';" always;
+add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' ws: wss:; frame-ancestors 'none';" always;
 ```
 
 - **`Strict-Transport-Security` (HSTS)** — instructs the browser to never try HTTP with this domain again after the first HTTPS visit, closing the man-in-the-middle attack window that would otherwise exist with only the 301 redirect (which still protects the first connection, but depends on that initial HTTP request not being intercepted before it reaches the server).
 - **`X-Content-Type-Options: nosniff`** — prevents the browser from reinterpreting a file's type based on content instead of trusting the declared `Content-Type` (relevant mitigation on the forum endpoints, where users publish content).
 - **`X-Frame-Options: DENY`** — prevents the site from being loaded inside an `<iframe>` on another domain (clickjacking protection). Chose `DENY` over `SAMEORIGIN` because the frontend doesn't use iframes of its own domain.
 - **`Referrer-Policy: strict-origin-when-cross-origin`** — prevents a page's full path (potentially carrying sensitive information in a query string) from being sent in the `Referer` header to external sites; for internal navigation and HTTPS→HTTPS across domains, it still keeps enough for analytics.
-- **`Content-Security-Policy` (CSP)** — restricts the sources from which resources (scripts, styles, images, connections) can be loaded, preventing unauthorized content injection and restricting embedding (`frame-ancestors 'none'`). Note: `'unsafe-inline'` and `'unsafe-eval'` are permitted for scripts/styles and `ws:`/`wss:` for connections to support Vite dev server HMR (`@vite/client`, `@react-refresh`) and real-time WebSockets until a static production build is deployed.
+- **`Content-Security-Policy` (CSP)** — restricts the sources from which resources (scripts, styles, images, connections) can be loaded, preventing unauthorized content injection and restricting embedding (`frame-ancestors 'none'`). Note: `'unsafe-inline'` is permitted for scripts and styles, and `ws:`/`wss:` for connections, to support the application's real-time WebSockets (backend `/ws` and `/socket.io/`, and Grafana Live). `'unsafe-eval'` is **not** allowed.
 
 **Tested with:**
 ```bash
@@ -87,7 +89,7 @@ Confirmed: all 5 headers present in the response with the expected values.
 
 ```nginx
 resolver 127.0.0.11 valid=10s;
-set $upstream_frontend http://frontend:5173;
+set $upstream_frontend http://frontend:80;
 set $upstream_backend http://backend:8000;
 set $upstream_grafana http://grafana:3000;
 set $upstream_kibana http://kibana:5601;
@@ -102,7 +104,9 @@ The fix has two parts:
 
 This makes the infrastructure resilient to container restarts: the backend (or any other service) can be recreated without needing to also restart nginx.
 
-## Frontend routing and Vite HMR WebSocket support
+A side effect of variable-based `proxy_pass` is that nginx no longer rewrites the URI on its own: the original request URI (including prefixes such as `/grafana`) is forwarded as-is. Where a different path is needed, a `rewrite` is used (see "Public health check").
+
+## Frontend routing and WebSocket upgrade headers
 
 ```nginx
 location / {
@@ -117,11 +121,9 @@ location / {
 }
 ```
 
-Routes all root traffic to the frontend service (`frontend:5173`).
+Routes all root traffic to the frontend service (`frontend:80`).
 
-Crucially, `proxy_http_version 1.1;`, `proxy_set_header Upgrade $http_upgrade;`, and `proxy_set_header Connection $connection_upgrade;` are configured on this block. In modern Vite development environments, the browser client establishes a WebSocket connection on the root origin (`wss://localhost/?token=...`) for Hot Module Replacement (HMR) and live development state synchronization.
-
-Without WebSocket upgrade headers, Nginx processes the handshake as a standard HTTP request and returns `200 OK` rather than `101 Switching Protocols`. This previously caused `Error during WebSocket handshake: Unexpected response code: 200` and secondary `SyntaxError: Failed to construct 'WebSocket'` exceptions in the Google Chrome developer console. Including the upgrade headers ensures compliant, error-free reverse-proxying across all client connections, satisfying the subject v21.1 mandate of zero browser console errors.
+`proxy_http_version 1.1;`, `proxy_set_header Upgrade $http_upgrade;` and `proxy_set_header Connection $connection_upgrade;` are kept on this block. They were originally added when the frontend ran the Vite dev server, whose browser client opens a WebSocket on the root origin (`wss://localhost/?token=...`) for Hot Module Replacement. Without them, nginx processes that handshake as a standard HTTP request and returns `200 OK` instead of `101 Switching Protocols`, which surfaced as `Error during WebSocket handshake: Unexpected response code: 200` in the browser console (relevant for the subject v21.1 mandate of zero browser console errors). They remain so that any upgrade request on the root origin is proxied correctly.
 
 ## Locations per backend module
 
@@ -214,9 +216,11 @@ location /socket.io/ {
 
 No dedicated rate limit on either — these are persistent connections (live BTC price feed, trades), not discrete requests that a `limit_req` model fits well.
 
-WebSockets explicitly enforce `proxy_http_version 1.1;` (HTTP 1.0 does not support protocol upgrades), utilize dynamic `$connection_upgrade` handling, and set `proxy_read_timeout 3600s;` to prevent idle connections from being dropped by the proxy's default 60s timeout.
+WebSockets explicitly enforce `proxy_http_version 1.1;` (HTTP 1.0 does not support protocol upgrades), use the `$connection_upgrade` map (`upgrade` when the client sent an `Upgrade` header, `close` otherwise), and set `proxy_read_timeout 3600s;` to prevent idle connections from being dropped by the proxy's default 60s timeout.
 
 `/socket.io/` (added for the frontend's real-time crypto price data) needs one scoped ModSecurity exclusion: **rule `920420`** was flagging legitimate WebSocket upgrade requests as malformed. The WAF is **not** disabled for this location (`modsecurity on;` is kept explicit) — only this one rule is removed, scoped to this `location` block alone; every other rule still applies to WebSocket traffic.
+
+Grafana has its own WebSocket route (`/grafana/api/live/`), documented under "Infrastructure UIs" below, which reuses the same `$connection_upgrade` map.
 
 ## Infrastructure UIs
 
@@ -225,6 +229,17 @@ location /grafana/ {
     proxy_pass $upstream_grafana;
     proxy_set_header Host $host;
     proxy_set_header X-Real-IP $remote_addr;
+}
+
+location /grafana/api/live/ {
+    proxy_pass $upstream_grafana;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection $connection_upgrade;
+    proxy_read_timeout 3600s;
+    proxy_send_timeout 3600s;
 }
 
 location /prometheus {
@@ -246,7 +261,31 @@ location /kibana/ {
 }
 ```
 
-No dedicated rate limit — these aren't endpoints exposed to end users of the application (internal/admin use), each already gated by its own authentication (Grafana login, Kibana behind `xpack.security`). Prometheus is not exposed publicly without authentication (returns 404), as Grafana queries it internally via the Docker network.
+No dedicated rate limit — these aren't endpoints exposed to end users of the application (internal/admin use), each already gated by its own authentication (Grafana login, Kibana behind `xpack.security`). Prometheus is not published: `/prometheus` returns `404`, and Grafana queries it server-side over the Docker network (via `/grafana/api/ds/query`, which requires a Grafana session). Direct access would expose metric names, internal container topology and scrape configuration with no authentication.
+
+**`/grafana/api/live/` — WebSocket support for Grafana Live:**
+
+Grafana Live pushes real-time dashboard updates over a WebSocket at `/grafana/api/live/ws`. The generic `/grafana/` location does not forward the upgrade headers, so the handshake failed with `400 Bad Request` and filled `audit.log` with errors on every dashboard load.
+
+- **Why a separate location:** nginx picks the longest matching prefix, so `/grafana/api/live/` takes precedence over `/grafana/` for this path only. The rest of Grafana keeps its simpler proxy config, and the WebSocket settings (HTTP/1.1, `Upgrade`, `Connection`, long timeouts) apply only where needed.
+- **`proxy_http_version 1.1`** — HTTP/1.0 (nginx's default for proxying) does not support protocol upgrades.
+- **`Upgrade` / `Connection`** — forwarded using the same `$connection_upgrade` map defined at the top of the file and used by `/ws` and `/socket.io/`.
+- **`proxy_read_timeout` / `proxy_send_timeout` 3600s** — avoids the default 60s idle timeout closing the connection between Live messages.
+- **No ModSecurity exclusion needed:** unlike `/socket.io/`, no CRS rule fires on this handshake, so `modsecurity on;` stays inherited from the server block with no rule removed.
+
+**Tested with:**
+- In the browser (DevTools → Network → WS), `GET /grafana/api/live/ws` returns `101 Switching Protocols`.
+- No `400` in the nginx access log for `/grafana/api/live` over a 10-minute window, and no entries for this path in the ModSecurity `audit.log`.
+- A manual handshake without a session reaches Grafana and returns `401` (not `400`), proving the upgrade headers arrive intact:
+
+```bash
+curl -k -i -N --http1.1 \
+  -H "Connection: Upgrade" -H "Upgrade: websocket" \
+  -H "Sec-WebSocket-Version: 13" \
+  -H "Sec-WebSocket-Key: SGVsbG8sIHdvcmxkIQ==" \
+  -H "Origin: https://localhost" \
+  https://localhost/grafana/api/live/ws
+```
 
 **`/kibana/` ModSecurity exclusions — rationale:**
 
@@ -326,3 +365,6 @@ The backend-enforced limits for forum endpoints are:
   this config — documented in `SECURITY_REPORT.md` §8. A second one-shot
   service, `backend_seed`, follows the same pattern and must also complete
   successfully before the backend is expected to behave correctly.
+- **Response-phase WAF rules (`950100` / `959100`)**: an upstream `5xx` adds to
+  the outbound anomaly score and can end up blocked by the WAF. Under review in
+  a separate branch.
