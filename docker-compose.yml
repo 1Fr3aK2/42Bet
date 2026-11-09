@@ -172,7 +172,7 @@ services:
       - ./vault/certs:/etc/vault/certs:ro
       - vault-data:/vault/data
     healthcheck:
-      test: ["CMD-SHELL", "vault status; [ $? -ne 1 ]"]
+      test: ["CMD", "vault", "status"]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -227,7 +227,7 @@ services:
       - vault-approle:/vault/approle
     depends_on:
       vault:
-        condition: service_healthy
+        condition: service_started
       vault-keys-init:
         condition: service_completed_successfully
       vault-approle-init:

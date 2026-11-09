@@ -4,6 +4,17 @@ set -e
 KEYS_FILE="/vault/keys/init.json"
 APPROLE_DIR="/vault/approle"
 
+# 0. Wait for Vault API to become accessible (sealed or unsealed)
+echo "[*] A aguardar que o Vault esteja acessível..."
+while true; do
+  STATUS=0
+  vault status >/dev/null 2>&1 || STATUS=$?
+  if [ "$STATUS" -eq 0 ] || [ "$STATUS" -eq 2 ]; then
+    break
+  fi
+  sleep 1
+done
+
 # 1. Initialize Vault — only runs once, the first time the container starts.
 #    On later runs the keys file already exists and this step is skipped.
 if [ ! -f "$KEYS_FILE" ]; then

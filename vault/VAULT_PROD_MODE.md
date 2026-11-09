@@ -327,13 +327,18 @@ surfaced several real bugs:
    config fields (only logging a warning), so `disable_mlock` was never
    actually set — which is fatal on the Vault version in use, where it no
    longer has a default.
-2. **Healthcheck deadlock** — `vault status` exits with code `2` whenever
-   Vault is sealed or uninitialized, which Docker's healthcheck treats as
-   failure. Since `vault_init` depends on `vault` being healthy, this created
-   a deadlock: Vault could never become healthy without being unsealed, but
-   unsealing needed `vault_init` to run, which needed Vault to be healthy.
-   Fixed by changing the healthcheck to only treat exit code `1` (real
-   connection/config error) as unhealthy.
+2. **Healthcheck deadlock vs sealed detection** — `vault status` exits with
+   code `2` whenever Vault is sealed or uninitialized, which Docker's
+   healthcheck treats as failure. Earlier this was worked around by accepting
+   any exit code other than 1 (`[ $? -ne 1 ]`), but that masked the sealed state:
+   restarting Vault left it sealed while Docker still marked it `healthy`,
+   letting the backend start and crash with `503 Vault is sealed`.
+   Properly resolved by:
+   - Setting the Vault healthcheck to `test: ["CMD", "vault", "status"]` (so
+     sealed or failing states correctly report `unhealthy`).
+   - Changing `vault_init`'s dependency to `depends_on: vault: condition: service_started`
+     with a readiness wait loop in `vault-init.sh`, breaking the cycle without
+     masking Vault's true operational health.
 3. **`mlock` failing under `cap_add: IPC_LOCK` alone** — Docker also
    enforces a `memlock` ulimit, defaulting to a low value regardless of
    granted capabilities. Fixed by adding `ulimits.memlock: {soft: -1, hard:
