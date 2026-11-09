@@ -365,6 +365,9 @@ The backend-enforced limits for forum endpoints are:
   this config — documented in `SECURITY_REPORT.md` §8. A second one-shot
   service, `backend_seed`, follows the same pattern and must also complete
   successfully before the backend is expected to behave correctly.
-- **Response-phase WAF rules (`950100` / `959100`)**: an upstream `5xx` adds to
-  the outbound anomaly score and can end up blocked by the WAF. Under review in
-  a separate branch.
+- **Response-phase WAF rules (`950100` / `959100`)**: rule `950100` (which scored
+  any upstream `5xx` and caused `959100` to mask server errors as `403 Forbidden`)
+  was removed via `SecRuleRemoveById 950100` in `before-crs.conf`. This preserves
+  true HTTP error semantics (`500`, `502`, `503`) for clients and monitoring, while
+  inbound inspection and specific sensitive data leakage rules (`951xxx`–`955xxx`)
+  remain active.
