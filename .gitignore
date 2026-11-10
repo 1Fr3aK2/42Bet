@@ -5,4 +5,5 @@ nginx/certs/
 vault/certs/
 node_modules/
 scripts/nginx/
-backups//scripts/logs/
+backups/
+/scripts/logs/
