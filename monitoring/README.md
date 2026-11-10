@@ -36,6 +36,10 @@ provisioned Grafana dashboard, with alerting rules evaluated by Prometheus.
   provisioned from files mounted into the container, not created manually through
   the UI. This keeps the whole monitoring setup reproducible with a single
   `docker compose up`, per the project's containerization requirement.
+- **Least privilege metrics scraping**: `postgres_exporter` connects as a
+  dedicated, non-superuser role (`postgres_exporter`) granted the native PostgreSQL
+  `pg_monitor` role, giving it read access to server statistics and active connections
+  with zero access to application tables or schema modifications.
 
 ## Directory structure
 

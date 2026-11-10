@@ -30,13 +30,15 @@ This is the principle of least privilege (audit finding **S9**): the component
 that serves requests must not have the permissions of the component that
 changes the schema.
 
-|  | `POSTGRES_USER` (owner) | `app_user` |
-| --- | --- | --- |
-| Used by | `backend_migrate`, `postgres_backup`, `postgres_exporter` | `backend` (through Vault) |
-| Superuser | Yes | No |
-| DDL (CREATE, ALTER, DROP) | Yes | No |
-| SELECT, INSERT, UPDATE, DELETE | Yes | Yes |
-| `COPY ... TO PROGRAM`, `CREATE ROLE` | Yes | No |
+|  | `POSTGRES_USER` (owner) | `app_user` | `postgres_exporter` |
+| --- | --- | --- | --- |
+| Used by | `backend_migrate`, `postgres_backup` | `backend` (through Vault) | `postgres_exporter` (metrics) |
+| Superuser | Yes | No | No |
+| System Role | — | — | `pg_monitor` |
+| DDL (CREATE, ALTER, DROP) | Yes | No | No |
+| SELECT, INSERT, UPDATE, DELETE (Tables) | Yes | Yes | **No** (Zero table access) |
+| System Statistics (`pg_stat_*`) | Yes | Own queries only | Yes (Server-wide) |
+| `COPY ... TO PROGRAM`, `CREATE ROLE` | Yes | No | No |
 
 ## The script
 
@@ -46,9 +48,14 @@ set -e
 
 export PGPASSWORD="$POSTGRES_PASSWORD"
 
+POSTGRES_EXPORTER_USER="${POSTGRES_EXPORTER_USER:-postgres_exporter}"
+POSTGRES_EXPORTER_PASSWORD="${POSTGRES_EXPORTER_PASSWORD:-$POSTGRES_PASSWORD}"
+
 psql -v ON_ERROR_STOP=1 \
   -v app_user="$APP_DB_USER" \
   -v app_password="$APP_DB_PASSWORD" \
+  -v exporter_user="$POSTGRES_EXPORTER_USER" \
+  -v exporter_password="$POSTGRES_EXPORTER_PASSWORD" \
   -v owner="$POSTGRES_USER" \
   -v dbname="$POSTGRES_DB" \
   -h postgres --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<'EOSQL'
@@ -67,6 +74,17 @@ GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO :"app_user";
 ALTER DEFAULT PRIVILEGES FOR ROLE :"owner" IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO :"app_user";
 ALTER DEFAULT PRIVILEGES FOR ROLE :"owner" IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO :"app_user";
 REVOKE CREATE ON SCHEMA public FROM PUBLIC;
+
+SELECT format(
+  CASE WHEN EXISTS (SELECT FROM pg_roles WHERE rolname = :'exporter_user')
+       THEN 'ALTER ROLE %I WITH PASSWORD %L'
+       ELSE 'CREATE ROLE %I WITH LOGIN PASSWORD %L NOSUPERUSER NOCREATEDB NOCREATEROLE'
+  END,
+  :'exporter_user', :'exporter_password')
+\gexec
+
+GRANT CONNECT ON DATABASE :"dbname" TO :"exporter_user";
+GRANT pg_monitor TO :"exporter_user";
 EOSQL
 ```
 
@@ -153,12 +171,16 @@ connection URL from it and special characters would need escaping.
       POSTGRES_DB: ${POSTGRES_DB}
       APP_DB_USER: ${APP_DB_USER}
       APP_DB_PASSWORD: ${APP_DB_PASSWORD}
+      POSTGRES_EXPORTER_USER: ${POSTGRES_EXPORTER_USER:-postgres_exporter}
+      POSTGRES_EXPORTER_PASSWORD: ${POSTGRES_EXPORTER_PASSWORD:-${POSTGRES_PASSWORD}}
     volumes:
       - ./postgres/init/ensure-app-user.sh:/ensure-app-user.sh:ro
     entrypoint: ["sh", "/ensure-app-user.sh"]
     depends_on:
       postgres:
         condition: service_healthy
+    security_opt:
+      - no-new-privileges:true
     restart: on-failure
 ```
 
