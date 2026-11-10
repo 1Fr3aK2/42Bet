@@ -1,0 +1,206 @@
+{
+  "users": [
+    {
+      "username": "demo_alex42",
+      "email": "demo.alex42@example.com"
+    },
+    {
+      "username": "demo_beatriz42",
+      "email": "demo.beatriz42@example.com"
+    },
+    {
+      "username": "demo_carlos42",
+      "email": "demo.carlos42@example.com"
+    },
+    {
+      "username": "demo_diana42",
+      "email": "demo.diana42@example.com"
+    },
+    {
+      "username": "demo_ines42",
+      "email": "demo.ines42@example.com"
+    }
+  ],
+  "posts": [
+    {
+      "title": "Previsões de 1 ou 5 minutos: qual preferem?",
+      "content": "Tenho alternado entre os dois períodos. Num minuto tudo acontece depressa; em cinco minutos consigo observar melhor a tendência. Como escolhem?",
+      "comments": [
+        "Também prefiro cinco minutos quando o gráfico está mais irregular.",
+        "Para mim, um minuto é interessante, mas exige muita atenção.",
+        "Tenho escolhido consoante a volatilidade do momento."
+      ]
+    },
+    {
+      "title": "O que observam antes de escolher UP ou DOWN?",
+      "content": "Antes de fazer uma previsão costumo olhar para os últimos movimentos do preço. Que sinais vos ajudam a tomar uma decisão?",
+      "comments": [
+        "Começo por observar a direção geral, sem tirar conclusões precipitadas.",
+        "Comparo os últimos minutos e evito decidir só por uma vela.",
+        "Às vezes espero mais um pouco; não é obrigatório participar sempre."
+      ]
+    },
+    {
+      "title": "Primeiras impressões sobre o 42Bet",
+      "content": "Experimentei a aplicação e gostei da possibilidade de acompanhar previsões curtas sem utilizar dinheiro real. O que acharam da experiência?",
+      "comments": [
+        "Achei o conceito interessante para explorar a interface.",
+        "A parte mais útil para mim é poder experimentar sem risco financeiro.",
+        "Gostava de ver mais discussões sobre os resultados das previsões."
+      ]
+    },
+    {
+      "title": "Será mais difícil prever em dias voláteis?",
+      "content": "Nos dias em que o preço muda rapidamente de direção, sinto que as previsões ficam menos intuitivas. Também vos acontece?",
+      "comments": [
+        "Sim, nesses períodos prefiro observar antes de escolher.",
+        "Uma mudança brusca pode contrariar o movimento anterior.",
+        "A volatilidade torna o exercício mais imprevisível."
+      ]
+    },
+    {
+      "title": "Como interpretam uma sequência de resultados?",
+      "content": "Quando acertam várias previsões seguidas, mudam a vossa forma de jogar ou continuam a avaliar cada uma separadamente?",
+      "comments": [
+        "Tento olhar para cada previsão como um evento novo.",
+        "Uma boa sequência não garante o resultado seguinte.",
+        "Gosto de rever a sequência para perceber o contexto."
+      ]
+    },
+    {
+      "title": "O temporizador ajuda a acompanhar as previsões?",
+      "content": "Gosto de saber exatamente quanto tempo falta para terminar uma ronda. Para vocês, o temporizador é uma parte importante da experiência?",
+      "comments": [
+        "Sim, ajuda-me a perceber quando a previsão vai terminar.",
+        "Acho importante que a contagem seja fácil de ler no telemóvel.",
+        "Concordo; também ajuda a organizar a atenção."
+      ]
+    },
+    {
+      "title": "Como usam o histórico de previsões?",
+      "content": "Tenho curiosidade em perceber se o histórico ajuda a aprender alguma coisa sobre as nossas decisões. Costumam voltar aos resultados antigos?",
+      "comments": [
+        "Rever resultados antigos pode revelar hábitos interessantes.",
+        "Eu comparo o que pensei antes com o que aconteceu depois.",
+        "É útil, desde que não se confunda histórico com certeza futura."
+      ]
+    },
+    {
+      "title": "Vale a pena esperar por um movimento mais claro?",
+      "content": "Às vezes o gráfico parece estar sem direção definida. Nesses momentos, preferem esperar ou fazem a previsão na mesma?",
+      "comments": [
+        "Prefiro esperar quando não consigo formular uma hipótese.",
+        "Também acho que não participar pode ser uma decisão sensata.",
+        "Depende do objetivo: experimentar ou tentar perceber melhor o gráfico."
+      ]
+    },
+    {
+      "title": "Que informação gostavam de ver no ecrã principal?",
+      "content": "Se pudessem escolher um elemento para destacar no ecrã de previsão, qual seria: preço atual, temporizador ou histórico recente?",
+      "comments": [
+        "Para mim, o preço atual tem de estar bem visível.",
+        "Eu destacaria o temporizador sem esconder o gráfico.",
+        "Gostava de ter um resumo do resultado anterior."
+      ]
+    },
+    {
+      "title": "Usam mais o fórum no computador ou no telemóvel?",
+      "content": "Tenho alternado entre o navegador do computador e o telemóvel. Em qual deles vos parece mais confortável acompanhar as conversas?",
+      "comments": [
+        "No computador consigo ler melhor as conversas longas.",
+        "No telemóvel é mais prático consultar rapidamente.",
+        "Acho importante que os botões sejam confortáveis em ambos."
+      ]
+    },
+    {
+      "title": "Como explicariam o 42Bet a um amigo?",
+      "content": "Estou a tentar encontrar uma explicação simples: fazemos previsões curtas sobre a direção da Bitcoin, sem envolver dinheiro real. O que acrescentariam?",
+      "comments": [
+        "Acrescentaria que é uma experiência de aprendizagem e interação.",
+        "Também falaria da escolha entre períodos diferentes.",
+        "E que o fórum permite comparar opiniões com outros utilizadores."
+      ]
+    },
+    {
+      "title": "Uma pergunta sobre as previsões de cinco minutos",
+      "content": "Quando escolhem cinco minutos, olham para um intervalo maior no gráfico ou usam a mesma informação que numa previsão de um minuto?",
+      "comments": [
+        "Eu tento observar um pouco mais de contexto.",
+        "Para mim, o período escolhido muda a forma de interpretar o gráfico.",
+        "Ainda estou a experimentar, por isso comparo as duas abordagens."
+      ]
+    },
+    {
+      "title": "Fórum: que temas gostavam de discutir?",
+      "content": "Além das previsões de Bitcoin, gostava que este espaço servisse para partilhar dúvidas e sugestões sobre a aplicação. Que assuntos vos interessam?",
+      "comments": [
+        "Gostava de discutir melhorias na apresentação dos resultados.",
+        "Seria útil ter tópicos sobre a utilização da aplicação.",
+        "Também gosto de conversar sobre como interpretamos os gráficos."
+      ]
+    },
+    {
+      "title": "Dicas para escrever títulos claros no fórum",
+      "content": "Quando abro uma discussão, tento usar um título que explique logo o assunto. Isso ajuda-vos a encontrar as conversas relevantes?",
+      "comments": [
+        "Sim, títulos específicos facilitam muito a pesquisa.",
+        "Também prefiro publicações com uma pergunta bem definida.",
+        "Um bom título evita abrir vários tópicos iguais."
+      ]
+    },
+    {
+      "title": "Pesquisar publicações antigas funciona bem?",
+      "content": "Tenho experimentado procurar conversas por palavras-chave. Que termos costumam usar quando querem encontrar uma discussão?",
+      "comments": [
+        "Normalmente pesquiso pelo tema principal da conversa.",
+        "Eu uso termos curtos, como gráfico ou previsão.",
+        "Ter filtros por autor também pode ser útil."
+      ]
+    },
+    {
+      "title": "Gostavam de ter mais exemplos de previsões?",
+      "content": "Acho interessante comparar decisões em cenários diferentes, mesmo quando os resultados são inesperados. Que exemplos vos seriam mais úteis?",
+      "comments": [
+        "Gostava de ver um cenário com pouca variação no preço.",
+        "Um exemplo com mudanças rápidas de direção também seria útil.",
+        "Comparar um e cinco minutos seria uma boa experiência."
+      ]
+    },
+    {
+      "title": "A importância de discordar com respeito",
+      "content": "Quando duas pessoas interpretam o mesmo gráfico de maneira diferente, acho que isso pode dar origem a boas conversas. Como costumam explicar a vossa opinião?",
+      "comments": [
+        "Costumo dizer que sinais observei e deixar espaço para dúvidas.",
+        "Concordo, opiniões diferentes tornam a discussão mais rica.",
+        "É bom discutir ideias sem transformar tudo numa competição."
+      ]
+    },
+    {
+      "title": "O que torna uma interface fácil de utilizar?",
+      "content": "Para mim, uma aplicação funciona melhor quando é simples perceber o próximo passo. O que consideram mais importante na navegação?",
+      "comments": [
+        "Uma disposição consistente dos botões ajuda bastante.",
+        "Mensagens de erro claras fazem muita diferença.",
+        "Também valorizo textos legíveis e bons contrastes."
+      ]
+    },
+    {
+      "title": "Como acompanham as mudanças no preço?",
+      "content": "Há quem observe o gráfico continuamente e quem volte a olhar só perto do fim da ronda. Qual é a vossa preferência?",
+      "comments": [
+        "Costumo acompanhar sobretudo o início e o fim.",
+        "Eu olho com frequência, mas tento não mudar de opinião a cada segundo.",
+        "Depende da duração da previsão que escolhi."
+      ]
+    },
+    {
+      "title": "Ideias para melhorar as nossas conversas",
+      "content": "Agora que já temos algumas discussões abertas, que melhorias gostavam de ver no fórum para facilitar a participação?",
+      "comments": [
+        "Talvez destacar os tópicos mais recentes.",
+        "Gostava de encontrar facilmente as minhas publicações.",
+        "Para mim, manter as conversas organizadas já é uma grande ajuda."
+      ]
+    }
+  ]
+}
