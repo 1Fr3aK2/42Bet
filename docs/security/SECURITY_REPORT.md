@@ -456,15 +456,16 @@ with the valid key provided.
 
 Updated from the original report — several previous gaps are now closed
 (Vault dev mode, forum per-user rate limiting, centralized logging, Postgres
-least privilege for the backend); what remains open:
+least privilege for the backend and exporter, container privilege hardening); what remains open:
 
-- **`postgres_exporter` still connects as the Postgres superuser** — the
-  S9 fix covers the backend's runtime connections only. The exporter uses
-  `POSTGRES_USER` in its `DATA_SOURCE_NAME`, which is the same least-privilege
-  gap in the monitoring stack. A dedicated role granted `pg_monitor` would
-  close it.
-- **Container hardening** — `no-new-privileges`, `read_only` filesystems
-  where feasible, not yet applied across services.
+- ~~`postgres_exporter` still connects as the Postgres superuser~~ — **resolved.**
+  The exporter now connects as `postgres_exporter`, a dedicated monitoring role
+  provisioned idempotently by `postgres_app_user_init` and granted `pg_monitor`.
+  It has access to server-wide performance metrics and statistics, with zero access
+  to user application tables.
+- ~~Container hardening (`no-new-privileges`)~~ — **resolved.**
+  `security_opt: [no-new-privileges:true]` is now enforced across all Compose services,
+  preventing processes from gaining additional privileges via setuid/setgid binaries.
 - **Rate limit reset test (Test 12)** — verifying that a successful login
   clears the failed-attempt counter for a real account remains dependent on
   the registration flow being fully exercised in a test environment; not a
@@ -496,7 +497,6 @@ least privilege for the backend); what remains open:
 - WAF response-phase rule tuning (disabled rule 950100 to preserve genuine 5xx error semantics)
 - Dedicated Nginx proxy location for Grafana Live WebSockets (`/grafana/api/live/`)
 - Aggregated health check (`/health`, `/health/status`) and standalone status page
-- Least-privilege Postgres role (`app_user`) for all backend runtime
-  connections, provisioned idempotently by `postgres_app_user_init` on every
-  startup
+- Least-privilege Postgres roles (`app_user` for backend runtime, `postgres_exporter` with `pg_monitor` for metrics), provisioned idempotently by `postgres_app_user_init` on every startup
+- Container hardening with `no-new-privileges:true` enforced across all Compose services
 - Corrected `Makefile` (decoupled routine builds from full cache resets)

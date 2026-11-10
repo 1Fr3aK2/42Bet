@@ -13,6 +13,8 @@ services:
       postgres_app_user_init:
         condition: service_completed_successfully
     command: ["npx", "prisma", "migrate", "deploy"]
+    security_opt:
+      - no-new-privileges:true
     restart: on-failure
 
   backend_seed:
@@ -35,6 +37,8 @@ services:
       vault_init:
         condition: service_completed_successfully
     command: ["npx", "prisma", "db", "seed"]
+    security_opt:
+      - no-new-privileges:true
     restart: on-failure
 
   backend:
@@ -71,6 +75,8 @@ services:
       timeout: 5s
       retries: 5
       start_period: 30s
+    security_opt:
+      - no-new-privileges:true
     restart: unless-stopped
 
   frontend:
@@ -88,6 +94,8 @@ services:
       timeout: 5s
       retries: 5
       start_period: 30s
+    security_opt:
+      - no-new-privileges:true
     restart: unless-stopped
 
   modsec-audit-init:
@@ -139,6 +147,8 @@ services:
       BLOCKING_PARANOIA: "2"
       MODSEC_AUDIT_LOG_PARTS: "AIJDEFHZ"
       MODSEC_AUDIT_LOG: /var/log/modsecurity/audit.log
+    security_opt:
+      - no-new-privileges:true
     restart: unless-stopped
 
   nginx_exporter:
@@ -151,6 +161,8 @@ services:
     depends_on:
       nginx:
         condition: service_healthy
+    security_opt:
+      - no-new-privileges:true
     restart: unless-stopped
 
   vault-data-init:
@@ -187,6 +199,8 @@ services:
     depends_on:
       vault-data-init:
         condition: service_completed_successfully
+    security_opt:
+      - no-new-privileges:true
     restart: unless-stopped
 
   vault-keys-init:
@@ -232,6 +246,8 @@ services:
         condition: service_completed_successfully
       vault-approle-init:
         condition: service_completed_successfully
+    security_opt:
+      - no-new-privileges:true
     restart: on-failure:3
 
   grafana:
@@ -251,6 +267,8 @@ services:
     depends_on:
       prometheus:
         condition: service_healthy
+    security_opt:
+      - no-new-privileges:true
     restart: unless-stopped
 
   prometheus-init:
@@ -282,6 +300,8 @@ services:
       timeout: 3s
       retries: 5
       start_period: 10s
+    security_opt:
+      - no-new-privileges:true
     restart: unless-stopped
 
   redis:
@@ -298,6 +318,8 @@ services:
       timeout: 3s
       retries: 5
       start_period: 10s
+    security_opt:
+      - no-new-privileges:true
     restart: unless-stopped
 
   redis_exporter:
@@ -311,6 +333,8 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+    security_opt:
+      - no-new-privileges:true
     restart: unless-stopped
 
   postgres:
@@ -330,6 +354,8 @@ services:
       timeout: 3s
       retries: 5
       start_period: 10s
+    security_opt:
+      - no-new-privileges:true
     restart: unless-stopped
 
   postgres_app_user_init:
@@ -343,12 +369,16 @@ services:
       POSTGRES_DB: ${POSTGRES_DB}
       APP_DB_USER: ${APP_DB_USER}
       APP_DB_PASSWORD: ${APP_DB_PASSWORD}
+      POSTGRES_EXPORTER_USER: ${POSTGRES_EXPORTER_USER:-postgres_exporter}
+      POSTGRES_EXPORTER_PASSWORD: ${POSTGRES_EXPORTER_PASSWORD:-${POSTGRES_PASSWORD}}
     volumes:
       - ./postgres/init/ensure-app-user.sh:/ensure-app-user.sh:ro
     entrypoint: ["sh", "/ensure-app-user.sh"]
     depends_on:
       postgres:
         condition: service_healthy
+    security_opt:
+      - no-new-privileges:true
     restart: on-failure
 
   postgres_backup:
@@ -373,6 +403,8 @@ services:
         /usr/local/bin/backup-postgres.sh;
         sleep 86400;
       done"
+    security_opt:
+      - no-new-privileges:true
     restart: unless-stopped
 
   postgres_exporter:
@@ -381,10 +413,14 @@ services:
     networks:
       - 42Bet
     environment:
-      DATA_SOURCE_NAME: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
+      DATA_SOURCE_NAME: postgresql://${POSTGRES_EXPORTER_USER:-postgres_exporter}:${POSTGRES_EXPORTER_PASSWORD:-${POSTGRES_PASSWORD}}@postgres:5432/${POSTGRES_DB}?sslmode=disable
     depends_on:
       postgres:
         condition: service_healthy
+      postgres_app_user_init:
+        condition: service_completed_successfully
+    security_opt:
+      - no-new-privileges:true
     restart: unless-stopped
 
   elasticsearch_backups_init:
@@ -419,6 +455,8 @@ services:
       timeout: 5s
       retries: 10
       start_period: 30s
+    security_opt:
+      - no-new-privileges:true
     restart: unless-stopped
 
   logstash:
@@ -437,6 +475,8 @@ services:
         condition: service_healthy
       elasticsearch_ilm_init:
         condition: service_completed_successfully
+    security_opt:
+      - no-new-privileges:true
     restart: unless-stopped
 
 
@@ -458,6 +498,8 @@ services:
     depends_on:
       elasticsearch:
         condition: service_healthy
+    security_opt:
+      - no-new-privileges:true
     restart: on-failure
 
   elasticsearch_ilm_init:
@@ -474,6 +516,8 @@ services:
     depends_on:
       elasticsearch:
         condition: service_healthy
+    security_opt:
+      - no-new-privileges:true
     restart: on-failure
   kibana:
     container_name: kibana
@@ -498,6 +542,8 @@ services:
       timeout: 5s
       retries: 10
       start_period: 30s
+    security_opt:
+      - no-new-privileges:true
     restart: unless-stopped
 
   filebeat:
@@ -516,6 +562,8 @@ services:
         condition: service_started
       modsec-audit-init:
         condition: service_completed_successfully
+    security_opt:
+      - no-new-privileges:true
     restart: unless-stopped
 
 volumes:
