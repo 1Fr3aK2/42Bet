@@ -36,6 +36,8 @@
 
         server_name  ${SERVER_NAME};
 
+        proxy_hide_header X-Powered-By;
+
         ssl_protocols ${SSL_PROTOCOLS};
         ssl_certificate   ${SSL_CERT_FILE};
         ssl_certificate_key ${SSL_CERT_KEY_FILE};
