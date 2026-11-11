@@ -248,19 +248,24 @@ Full reference in `NGINX_CONFIG.md`. Highlights:
   `Referrer-Policy: strict-origin-when-cross-origin`,
   `Content-Security-Policy`. Verified via `curl -I`.
 - **WebSocket support** (`/socket.io/`, added by the frontend teammate for
-  real-time crypto price data) required a scoped ModSecurity exclusion
-  (`SecRuleRemoveById 920420`) rather than disabling the WAF for that location
-  entirely — the WAF stays active (`modsecurity on;`) inside the location, only
-  the one rule causing false positives on WebSocket upgrade requests is
-  removed, scoped to that location only.
-- **A second scoped WAF exclusion** was added for `/kibana/`
-  (`SecRuleRemoveById 942340`): Kibana's search UI legitimately sends
-  wildcard-containing queries to `/kibana/api/content_management/rpc/search`,
-  which the SQLi rule 942340 flagged as an attack, adding to the inbound
-  anomaly score and causing legitimate searches to be blocked with 403. Same
-  scoped-exclusion pattern as the WebSocket fix — the rule is removed only for
-  this one location, the rest of the WAF's SQLi protection is untouched
-  elsewhere.
+  real-time crypto price data) required a scoped ModSecurity exclusion for rule
+  `920420`, implemented as runtime rule `1000013` in `before-crs.conf`
+  (`@rx ^/+socket\.io(/|\?|$)`) rather than disabling the WAF for that location
+  entirely — the WAF stays active (`modsecurity on;` is inherited from the
+  `server` block), and only the one rule causing false positives on Socket.IO
+  polling and WebSocket upgrade requests is removed, only for that path.
+  It started as an inline `SecRuleRemoveById 920420` in the `location` block and
+  was migrated so that every WAF exclusion lives in one versioned file.
+- **A second scoped WAF exclusion** was added for `/kibana`: Kibana's search UI
+  legitimately sends wildcard-containing queries to
+  `/kibana/api/content_management/rpc/search`, which the SQLi rule `942340`
+  flagged as an attack, adding to the inbound anomaly score and causing
+  legitimate searches to be blocked with 403. Same scoped-exclusion pattern as
+  the WebSocket fix — the rule is removed only for this path, the rest of the
+  WAF's SQLi protection is untouched elsewhere. The same exclusion later grew to
+  cover four more Kibana false positives (`932236`, `932240`, `942220`,
+  `934190`); all five now live in runtime rule `1000012` in `before-crs.conf`.
+  The reasoning for each rule is in `nginx/modsecurity/WAF_HARDENING.md`.
 - **Rate-limited zones per module**: `login` (10r/m), `forum` (30r/s),
   `admin_api` (30r/s), and — added in this phase — `health` (10r/s, burst 20,
   `nodelay`).
@@ -424,11 +429,16 @@ the WAF's block masked the real cause.
 **Immediate fix applied:** `docker compose restart nginx`, which forces a
 fresh DNS lookup.
 
-**Structural fix (resolving via the `127.0.0.11` Docker embedded DNS resolver
-with `proxy_pass` built from a variable, so nginx re-resolves on every
-request instead of caching for the container's lifetime) was identified but
-deliberately not applied** — logged here as a known, accepted trade-off for
-this project's scope rather than a silently dropped item.
+**Structural fix (now applied):** it was first identified and deliberately
+deferred, and has since been implemented in the nginx template. nginx resolves
+its upstreams through Docker's embedded DNS (`resolver 127.0.0.11 valid=10s;`)
+and every `proxy_pass` is built from a variable (`set $upstream_backend
+http://backend:8000;`, `proxy_pass $upstream_backend;`), so the hostname is
+resolved at request time, cached for at most 10 seconds, instead of once at
+startup for the lifetime of the container. A recreated `backend` (or any other
+service) no longer needs an nginx restart. A side effect is that nginx stops
+rewriting the URI by itself, so `/health` uses an explicit `rewrite` to reach
+`/health/status`. Detail in `NGINX_CONFIG.md`, "DNS resolution".
 
 **Response-phase WAF masking fix applied:** CRS rule `950100` (which scored any
 upstream `5xx` error in phase 4 and triggered rule `959100` to mask server errors
@@ -456,7 +466,8 @@ with the valid key provided.
 
 Updated from the original report — several previous gaps are now closed
 (Vault dev mode, forum per-user rate limiting, centralized logging, Postgres
-least privilege for the backend and exporter, container privilege hardening); what remains open:
+least privilege for the backend and exporter, container privilege hardening,
+nginx DNS caching); what remains open:
 
 - ~~`postgres_exporter` still connects as the Postgres superuser~~ — **resolved.**
   The exporter now connects as `postgres_exporter`, a dedicated monitoring role
@@ -466,12 +477,14 @@ least privilege for the backend and exporter, container privilege hardening); wh
 - ~~Container hardening (`no-new-privileges`)~~ — **resolved.**
   `security_opt: [no-new-privileges:true]` is now enforced across all Compose services,
   preventing processes from gaining additional privileges via setuid/setgid binaries.
+- ~~**nginx DNS caching** (Section 9)~~ — **resolved.** nginx now resolves its
+  upstreams at request time through Docker's embedded DNS (`resolver 127.0.0.11
+  valid=10s;` with variable-based `proxy_pass`), so recreating a service no
+  longer requires restarting nginx.
 - **Rate limit reset test (Test 12)** — verifying that a successful login
   clears the failed-attempt counter for a real account remains dependent on
   the registration flow being fully exercised in a test environment; not a
   rate-limiting defect, a test-coverage gap.
-- **nginx DNS caching** (Section 9) — accepted trade-off, structural fix
-  identified but not applied, given the project's scope and timeline.
 - **Elasticsearch/WAF-audit data has no backup** — by design: ILM already
   caps its useful lifetime at 14 days, and it is operational/diagnostic data,
   not a system of record (see `docs/DISASTER_RECOVERY.md` §3).

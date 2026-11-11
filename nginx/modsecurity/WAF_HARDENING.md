@@ -68,8 +68,8 @@ a configuration-time directive, mount a file on
 | `1000009` | Grafana Explore `panes` argument: SQL-injection and command-injection groups excluded on `/grafana/explore` only (reload with F5) |
 | `1000010` | Grafana Explore query history: PromQL field of `POST /grafana/api/query-history` (`queries.array_0.expr`) |
 | `1000011` | Kibana login `currentURL` field: rule `920230` only, on `/kibana/internal/security/login` (`ARGS:json.currentURL`) |
-| `1000012` | Kibana internal API and query exclusions: rules `932236`, `932240`, `942220`, `942340`, `934190` on `/kibana/` |
-| `1000013` | Socket.IO WebSocket/polling exclusion: rule `920420` on `/socket.io/` |
+| `1000012` | Kibana internal API and query exclusions: rules `932236`, `932240`, `942220`, `942340`, `934190` on every request under `/kibana` (whole rules, not one target) |
+| `1000013` | Socket.IO WebSocket/polling exclusion: rule `920420` on every request under `/socket.io` |
 
 ### Configuration-time exclusions in use
 
@@ -482,12 +482,14 @@ SecRule REQUEST_URI "@rx ^/+kibana(/|\?|$)" \
 
 Previously, these were disabled via inline `modsecurity_rules` inside Nginx's `location /kibana/` block. Migrating them to rule `1000012` in `before-crs.conf` brings all WAF customizations into a single, versioned, runtime exclusion file.
 
-**Fix:** Rule `1000012` disables these five specific rules for requests whose URI path starts with `/kibana` using `@rx ^/+kibana(/|\?|$)` (matching multiple leading slashes to mirror Nginx URI normalization).
+**Fix:** Rule `1000012` disables these five specific rules for requests whose URI path starts with `/kibana` using `@rx ^/+kibana(/|\?|$)`. The leading `/+` matches repeated slashes (e.g. `//kibana/`), mirroring how Nginx normalizes the URI before choosing a `location`, because ModSecurity's `REQUEST_URI` is the raw URI. The regex also matches `/kibana` and `/kibana?...` (without the trailing slash), which the old `location /kibana/` did not.
+
+**Trade-off:** unlike the target-scoped exclusions above (`1000005`, `1000011`), this rule uses `ctl:ruleRemoveById`, so the five rules are removed for **every field of every request under `/kibana`**, not for one target. This is the same behavior the inline `modsecurity_rules` block had; migrating it did not widen or narrow it. If the audit log shows that a single field is responsible for a rule, prefer replacing that rule with a `ruleRemoveTargetById` for that field, as was done for the `sid` cookie and `currentURL`.
 
 What keeps this safe:
-- **Scope limited to `/kibana/`.** These five rules remain fully active for all other routes (frontend, backend, forum, auth, admin API).
+- **Scope limited to `/kibana`.** These five rules remain fully active for all other routes (frontend, backend, forum, auth, admin API).
 - **Other CRS rules remain active on Kibana.** XSS rules (941xxx), Local File Inclusion, Remote File Inclusion, and scanner detection continue to inspect all Kibana requests.
-- **Kibana is authenticated.** Direct public access without valid Elasticsearch/Kibana credentials cannot reach internal Kibana management functions.
+- **Kibana is authenticated.** Apart from the login endpoint itself (which is pre-authentication and is also covered by this exclusion), requests need a valid Kibana session. The exclusion only removes five rules; it does not open any route.
 - **Dedicated exclusions remain intact.** Specific targets continue to have surgical overrides (`1000005` for the `sid` cookie, `1000011` for `currentURL`).
 
 ## `before-crs.conf` — Socket.IO traffic (Rule 1000013)
@@ -508,12 +510,12 @@ SecRule REQUEST_URI "@rx ^/+socket\.io(/|\?|$)" \
 
 Previously, this was disabled via an inline `modsecurity_rules` block inside Nginx's `location /socket.io/`. Migrating it to runtime rule `1000013` in `before-crs.conf` brings all ModSecurity exclusions into the central, upgrade-safe exclusion file and eliminates inline Nginx WAF directives entirely.
 
-**Fix:** Rule `1000013` disables only rule `920420` for requests whose URI starts with `/socket.io` using `@rx ^/+socket\.io(/|\?|$)`.
+**Fix:** Rule `1000013` disables only rule `920420` for requests whose URI starts with `/socket.io` using `@rx ^/+socket\.io(/|\?|$)` (the leading `/+` has the same purpose as in rule `1000012`).
 
 What keeps this safe:
 - **Rule-scoped.** Only rule `920420` is bypassed. All other CRS inspection rules (SQLi, XSS, RCE, protocol violations) remain fully active on `/socket.io/` traffic.
 - **Path-scoped.** Rule `920420` remains fully enforced on all other routes across the application.
-- **WebSocket security preserved.** Inbound frames and payloads continue to be inspected by Phase 1 and Phase 2 rules.
+- **The WAF only sees HTTP requests.** The long-polling requests and the WebSocket handshake of `/socket.io/` (URI, headers and body) keep going through the CRS. The frames sent after `101 Switching Protocols` are never inspected by ModSecurity; this was already true before this change and the exclusion does not alter it.
 
 ## `before-crs.conf` — Grafana userstorage (page history)
 
@@ -1018,6 +1020,46 @@ to end, not assumed:
    `currentURL` only. Then log in to `https://localhost/kibana/` in the browser
    and confirm it works, and run `bash scripts/test-forum.sh && bash
    scripts/test-users.sh`.
+12. If touching the Kibana API or Socket.IO exclusions (rules `1000012`,
+   `1000013`), check the scope, including the double-slash case. Rule `942220`
+   matches an argument whose value is exactly `2147483648`, so it is a simple
+   way to trigger one of the five Kibana rules; rule `920420` is triggered by
+   any Content-Type that is not in the allowed list. Run them one at a time and
+   use a **new marker** on every run, as in step 11:
+   ```bash
+   # must NOT be 403: 942220 value under /kibana
+   curl -sk -o /dev/null -w "%{http_code}\n" "https://localhost/kibana/?t=T21&x=2147483648"
+   ```
+   ```bash
+   # must NOT be 403: same value, double slash (Nginx normalizes it to /kibana/)
+   curl -sk -o /dev/null -w "%{http_code}\n" "https://localhost//kibana/?t=T22&x=2147483648"
+   ```
+   ```bash
+   # must be 403 (942220 in the audit log): same value on another route
+   curl -sk -o /dev/null -w "%{http_code}\n" "https://localhost/users/me?t=T23&x=2147483648"
+   ```
+   ```bash
+   # must NOT be 403: Content-Type outside the allowed list on /socket.io/
+   curl -sk -o /dev/null -w "%{http_code}\n" -X POST "https://localhost/socket.io/?EIO=4&transport=polling&t=T24" -H "Content-Type: application/x-test" -d "40"
+   ```
+   ```bash
+   # must NOT be 403: same request, double slash
+   curl -sk -o /dev/null -w "%{http_code}\n" -X POST "https://localhost//socket.io/?EIO=4&transport=polling&t=T25" -H "Content-Type: application/x-test" -d "40"
+   ```
+   ```bash
+   # must be 403 (920420 in the audit log): same Content-Type on another route
+   curl -sk -o /dev/null -w "%{http_code}\n" -X POST "https://localhost/users/me?t=T26" -H "Content-Type: application/x-test" -d "40"
+   ```
+   ```bash
+   docker compose exec -T nginx cat /var/log/modsecurity/audit.log \
+     | grep -E 't=T2[1-6]' \
+     | grep -oE '"uri":"[^"]*"|ruleId":"[0-9]*'
+   ```
+   Only `T23` and `T26` should list a rule (`942220` and `920420`); the others
+   should show none of the five Kibana rules and no `920420`. Then use Kibana
+   (dashboards, saved objects, search filters) and the live prices of the
+   frontend in the browser, and confirm there is no `403` and none of these
+   rules in `audit.log` for `/kibana` and `/socket.io`.
 
 ## `before-crs.conf` — Upstream 5xx response masking (Rule 950100)
 
