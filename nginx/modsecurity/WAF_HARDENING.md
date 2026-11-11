@@ -69,6 +69,7 @@ a configuration-time directive, mount a file on
 | `1000010` | Grafana Explore query history: PromQL field of `POST /grafana/api/query-history` (`queries.array_0.expr`) |
 | `1000011` | Kibana login `currentURL` field: rule `920230` only, on `/kibana/internal/security/login` (`ARGS:json.currentURL`) |
 | `1000012` | Kibana internal API and query exclusions: rules `932236`, `932240`, `942220`, `942340`, `934190` on `/kibana/` |
+| `1000013` | Socket.IO WebSocket/polling exclusion: rule `920420` on `/socket.io/` |
 
 ### Configuration-time exclusions in use
 
@@ -487,6 +488,31 @@ What keeps this safe:
 - **Other CRS rules remain active on Kibana.** XSS rules (941xxx), Local File Inclusion, Remote File Inclusion, and scanner detection continue to inspect all Kibana requests.
 - **Kibana is authenticated.** Direct public access without valid Elasticsearch/Kibana credentials cannot reach internal Kibana management functions.
 - **Dedicated exclusions remain intact.** Specific targets continue to have surgical overrides (`1000005` for the `sid` cookie, `1000011` for `currentURL`).
+
+## `before-crs.conf` — Socket.IO traffic (Rule 1000013)
+
+```apache
+SecRule REQUEST_URI "@rx ^/socket\.io(/|\?|$)" \
+  "id:1000013,\
+  phase:1,\
+  nolog,\
+  pass,\
+  t:none,\
+  ctl:ruleRemoveById=920420"
+```
+
+**Symptom:** Socket.IO connections (used by the frontend for live Kraken price feeds and real-time betting updates) failed during handshake and polling phases with `403 Forbidden`.
+
+**Cause:** Socket.IO clients use a transport fallback sequence starting with HTTP long-polling (`GET`/`POST`) before upgrading to WebSockets. The client sends payload requests with non-standard Content-Type headers or parameter formats that trip CRS rule `920420` (*Request content_type is not allowed by policy*).
+
+Previously, this was disabled via an inline `modsecurity_rules` block inside Nginx's `location /socket.io/`. Migrating it to runtime rule `1000013` in `before-crs.conf` brings all ModSecurity exclusions into the central, upgrade-safe exclusion file and eliminates inline Nginx WAF directives entirely.
+
+**Fix:** Rule `1000013` disables only rule `920420` for requests whose URI starts with `/socket.io/` using `@rx ^/socket\.io(/|\?|$)`.
+
+What keeps this safe:
+- **Rule-scoped.** Only rule `920420` is bypassed. All other CRS inspection rules (SQLi, XSS, RCE, protocol violations) remain fully active on `/socket.io/` traffic.
+- **Path-scoped.** Rule `920420` remains fully enforced on all other routes across the application.
+- **WebSocket security preserved.** Inbound frames and payloads continue to be inspected by Phase 1 and Phase 2 rules.
 
 ## `before-crs.conf` — Grafana userstorage (page history)
 
@@ -1055,3 +1081,4 @@ What keeps this safe:
       drilldown apps) return `403` on reload; accepted, not fixed
 - [x] Upstream 5xx masking rule 950100 removed; real HTTP error semantics preserved for clients and monitoring
 - [x] Kibana internal API rules migrated from inline Nginx directives to centralized runtime exclusion `1000012` in `before-crs.conf`
+- [x] Socket.IO rule 920420 migrated from inline Nginx directive to centralized runtime exclusion `1000013` in `before-crs.conf`
