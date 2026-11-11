@@ -70,6 +70,7 @@ a configuration-time directive, mount a file on
 | `1000011` | Kibana login `currentURL` field: rule `920230` only, on `/kibana/internal/security/login` (`ARGS:json.currentURL`) |
 | `1000012` | Kibana internal API and query exclusions: rules `932236`, `932240`, `942220`, `942340`, `934190` on every request under `/kibana` (whole rules, not one target) |
 | `1000013` | Socket.IO WebSocket/polling exclusion: rule `920420` on every request under `/socket.io` |
+| `1000014` | Kibana `Referer` header: SQL-injection group excluded on `/kibana/` requests only (page state in the URL) |
 
 ### Configuration-time exclusions in use
 
@@ -516,6 +517,29 @@ What keeps this safe:
 - **Rule-scoped.** Only rule `920420` is bypassed. All other CRS inspection rules (SQLi, XSS, RCE, protocol violations) remain fully active on `/socket.io/` traffic.
 - **Path-scoped.** Rule `920420` remains fully enforced on all other routes across the application.
 - **The WAF only sees HTTP requests.** The long-polling requests and the WebSocket handshake of `/socket.io/` (URI, headers and body) keep going through the CRS. The frames sent after `101 Switching Protocols` are never inspected by ModSecurity; this was already true before this change and the exclusion does not alter it.
+
+## `before-crs.conf` — Kibana `Referer` header (Rule 1000014)
+
+```apache
+SecRule REQUEST_URI "@rx ^/+kibana(/|\?|$)" \
+  "id:1000014,\
+  phase:1,\
+  nolog,\
+  pass,\
+  t:none,\
+  ctl:ruleRemoveTargetByTag=attack-sqli;REQUEST_HEADERS:Referer"
+```
+
+**Symptom:** When navigating Kibana dashboards or sub-applications (e.g. the Security app, saved queries, or visualizations), background requests to fetch assets, chunks, or internal API data were blocked with `403 Forbidden`.
+
+**Cause:** The browser automatically attaches the current page URL as the `Referer` header for every request made by that page. Kibana keeps its full application and query state inside URL parameters (e.g. `?sourcerer=...` in the Security app, Lucene search filters, and JSON-encoded views). Several CRS SQL-injection rules (such as `942200` and `942370`) match patterns within these complex URL strings, incorrectly scoring the `Referer` header as an attack vector.
+
+**Fix:** Rule `1000014` removes the `attack-sqli` rule group specifically from `REQUEST_HEADERS:Referer` for all requests under `/kibana` using `@rx ^/+kibana(/|\?|$)`.
+
+What keeps this safe:
+- **Target-scoped.** Only `REQUEST_HEADERS:Referer` is bypassed, and only for the `attack-sqli` group. Every other header (Cookie, User-Agent, Authorization) and all query arguments/body fields continue to be inspected for SQL injection.
+- **Other CRS groups remain active on Referer.** XSS rules (`attack-xss`), command injection (`attack-rce`), path traversal, and protocol checks continue to inspect the `Referer` header on `/kibana`.
+- **Path-scoped.** Rule `1000014` applies only to `/kibana/` traffic. The `Referer` header on all other routes across the application remains fully checked against `attack-sqli`.
 
 ## `before-crs.conf` — Grafana userstorage (page history)
 
@@ -1125,3 +1149,4 @@ What keeps this safe:
 - [x] Upstream 5xx masking rule 950100 removed; real HTTP error semantics preserved for clients and monitoring
 - [x] Kibana internal API rules migrated from inline Nginx directives to centralized runtime exclusion `1000012` in `before-crs.conf`
 - [x] Socket.IO rule 920420 migrated from inline Nginx directive to centralized runtime exclusion `1000013` in `before-crs.conf`
+- [x] Kibana `Referer` header exclusion added (`1000014`), scoped by tag (`attack-sqli`) to `REQUEST_HEADERS:Referer` under `/kibana` only
