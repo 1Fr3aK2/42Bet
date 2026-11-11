@@ -418,20 +418,20 @@ moderation AI (our moderation is rule-based, not AI).
   - Automated one-shot initialization and migration pipeline: `backend_migrate`, `backend_seed`, `postgres_app_user_init`, `prometheus-init`, `vault-data-init`, `elasticsearch_backups_init`.
   - Container privilege hardening: Enforced `security_opt: [no-new-privileges:true]` across all Compose services, preventing privilege escalation through `setuid`/`setgid` binaries.
 - **Nginx Reverse Proxy & ModSecurity WAF (OWASP CRS)**:
-  - TLS termination (HTTPS), HTTP/2, security headers (HSTS, CSP, X-Frame-Options, X-Content-Type-Options) and version disclosure suppression with `server_tokens off;` (**S8b**).
+  - TLS termination (HTTPS), HTTP/2, security headers (HSTS, CSP, X-Frame-Options, X-Content-Type-Options) and version disclosure suppression with `server_tokens off;` (suppressing the server version from HTTP response headers).
   - Dedicated WebSocket proxy configurations: `/socket.io/` (real-time trading and Kraken feeds) and `/grafana/api/live/` (dedicated Grafana Live WebSocket proxy with 3600s timeouts, eliminating 400 errors and audit log flooding).
-  - Content-Security-Policy (**S8a**): Configured and hardened; removed `'unsafe-eval'` following frontend transition to production build.
+  - Content-Security-Policy: Configured and hardened; removed `'unsafe-eval'` following frontend transition to production build.
   - WAF Tuning (OWASP CRS Paranoia Level 2): Surgical exclusions in `before-crs.conf` (PromQL, query history) and removed outbound response rule `950100` so upstream `5xx` server exceptions are preserved with accurate HTTP semantics (`500`, `502`, `503`) rather than masquerading as `403 Forbidden`.
-  - Public health endpoint hardening (**F-03**): Refactored `/health/status` to group services into `core` and `monitoring` while returning `200`, hiding internal system topology.
+  - Public health endpoint hardening: Refactored `/health/status` to group services into `core` and `monitoring` while returning `200`, hiding internal system topology.
 - **HashiCorp Vault (Production Mode, AppRole & Secrets Management)**:
   - Migrated Vault from dev-mode to production with persistent Raft storage and internal TLS (`https://vault:8200`).
   - AppRole authentication: Runtime secret injection (`DATABASE_URL`, `REDIS_URL`, JWT secret, Admin credentials) without secrets in `.env` files or images; `secret_id_ttl=0` to eliminate 24h credential expiration.
   - Idempotent Shamir init and unseal (`vault-init.sh`) with 5 shares (threshold 3); automated revocation of the root token after initial bootstrap for strict least privilege.
   - Unsealed healthcheck validation (`CMD vault status`) and resolution of startup ordering deadlock via `service_started` on `vault_init`, preventing `backend` from booting against a sealed Vault.
-- **Database Security & Least Privilege (S9)**:
+- **Database Security & Least Privilege**:
   - Multi-tier least privilege in PostgreSQL: Idempotent provisioning (`postgres_app_user_init`) of `app_user` with restricted DML privileges (`SELECT`, `INSERT`, `UPDATE`, `DELETE`), removing superuser access from backend runtime and isolating DDL migrations to `backend_migrate`.
   - Dedicated monitoring role: Created `postgres_exporter` user granted PostgreSQL native `pg_monitor` role, providing full server performance visibility with zero access to application tables.
-- **Brute-Force & Rate Limiting Hardening (S1)**:
+- **Brute-Force & Rate Limiting Hardening**:
   - Resolved account-based brute-force bypass: Implemented account-level Redis counter keyed on canonical `user.id`, preventing attackers from evading lockout by alternating between email and username.
 - **Monitoring, Centralized Logging & Disaster Recovery (Prometheus, Grafana, ELK)**:
   - Prometheus hardening: Removed unauthenticated public access (returns `404` through Nginx); all queries proxied securely via authenticated Grafana.
@@ -443,7 +443,7 @@ moderation AI (our moderation is rule-based, not AI).
 - **Challenges**:
   - *Vault Production Migration & Startup Deadlock*: Moving from dev-mode to persistent Raft storage with TLS created a circular deadlock because the healthcheck originally masked sealed state (`[ $? -ne 1 ]`). Resolved by decoupling daemon readiness (`service_started` with active polling) in `vault_init` from true unsealed health (`service_healthy`) required by downstream services.
   - *WAF Tuning vs HTTP Semantics*: Tuning OWASP CRS Paranoia 2 to eliminate false positives in PromQL and WebSocket handshakes without disabling global protections; disabling outbound rule `950100` so legitimate server errors (`500`, `502`, `503`) reach clients and metrics intact instead of masquerading as 403 blocks.
-  - *Database Least Privilege (S9 & Monitoring)*: Segregating runtime DML (`app_user`), DDL migrations (`backend_migrate`), and metrics scraping (`postgres_exporter` with `pg_monitor`) while maintaining automated schema deployment, Prisma compatibility, and zero-downtime restarts.
+  - *Database Least Privilege (Runtime vs. Migrations vs. Metrics)*: Segregating runtime DML (`app_user`), DDL migrations (`backend_migrate`), and metrics scraping (`postgres_exporter` with `pg_monitor`) while maintaining automated schema deployment, Prisma compatibility, and zero-downtime restarts.
 
 ### Pedro Silva
 
