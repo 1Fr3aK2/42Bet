@@ -68,6 +68,7 @@ a configuration-time directive, mount a file on
 | `1000009` | Grafana Explore `panes` argument: SQL-injection and command-injection groups excluded on `/grafana/explore` only (reload with F5) |
 | `1000010` | Grafana Explore query history: PromQL field of `POST /grafana/api/query-history` (`queries.array_0.expr`) |
 | `1000011` | Kibana login `currentURL` field: rule `920230` only, on `/kibana/internal/security/login` (`ARGS:json.currentURL`) |
+| `1000012` | Kibana internal API and query exclusions: rules `932236`, `932240`, `942220`, `942340`, `934190` on `/kibana/` |
 
 ### Configuration-time exclusions in use
 
@@ -453,6 +454,39 @@ Things worth knowing if this is touched again:
   not extend this rule: that would be a different value and needs its own
   analysis.
 - `@beginsWith` is enough here because the endpoint is a fixed path.
+
+## `before-crs.conf` — Kibana internal API traffic (Rule 1000012)
+
+```apache
+SecRule REQUEST_URI "@rx ^/kibana(/|\?|$)" \
+  "id:1000012,\
+  phase:1,\
+  nolog,\
+  pass,\
+  t:none,\
+  ctl:ruleRemoveById=932236,\
+  ctl:ruleRemoveById=932240,\
+  ctl:ruleRemoveById=942220,\
+  ctl:ruleRemoveById=942340,\
+  ctl:ruleRemoveById=934190"
+```
+
+**Symptom:** When navigating Kibana dashboards, saving objects, or running search filters, requests to internal Kibana APIs produced false positives under Paranoia Level 2.
+
+**Cause:** Kibana's frontend communicates with its Node.js backend using internal query DSLs, Lucene expressions, complex nested JSON states, and URL parameters. Several CRS rules match harmless query fragments:
+- `932236`, `932240`: Unix command injection patterns matched in internal query structures and variables.
+- `942220`, `942340`: SQL-injection patterns matched in Kibana filter DSLs (e.g. numeric expressions, boolean chains).
+- `934190`: PHP injection rule matching URL parameters.
+
+Previously, these were disabled via inline `modsecurity_rules` inside Nginx's `location /kibana/` block. Migrating them to rule `1000012` in `before-crs.conf` brings all WAF customizations into a single, versioned, runtime exclusion file.
+
+**Fix:** Rule `1000012` disables these five specific rules for requests whose URI starts with `/kibana` using `@rx ^/kibana(/|\?|$)`.
+
+What keeps this safe:
+- **Scope limited to `/kibana/`.** These five rules remain fully active for all other routes (frontend, backend, forum, auth, admin API).
+- **Other CRS rules remain active on Kibana.** XSS rules (941xxx), Local File Inclusion, Remote File Inclusion, and scanner detection continue to inspect all Kibana requests.
+- **Kibana is authenticated.** Direct public access without valid Elasticsearch/Kibana credentials cannot reach internal Kibana management functions.
+- **Dedicated exclusions remain intact.** Specific targets continue to have surgical overrides (`1000005` for the `sid` cookie, `1000011` for `currentURL`).
 
 ## `before-crs.conf` — Grafana userstorage (page history)
 
@@ -1020,3 +1054,4 @@ What keeps this safe:
 - [x] Known limitation documented: Grafana Explore Traces (and untested
       drilldown apps) return `403` on reload; accepted, not fixed
 - [x] Upstream 5xx masking rule 950100 removed; real HTTP error semantics preserved for clients and monitoring
+- [x] Kibana internal API rules migrated from inline Nginx directives to centralized runtime exclusion `1000012` in `before-crs.conf`
