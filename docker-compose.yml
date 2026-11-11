@@ -106,6 +106,8 @@ services:
       - touch /var/log/modsecurity/audit.log && chown -R 101:101 /var/log/modsecurity
     volumes:
       - modsec-audit-log:/var/log/modsecurity
+    security_opt:
+      - no-new-privileges:true
 
   nginx:
     container_name: nginx
@@ -170,6 +172,8 @@ services:
     command: ["chown", "-R", "100:1000", "/vault/data"]
     volumes:
       - vault-data:/vault/data
+    security_opt:
+      - no-new-privileges:true
 
   vault:
     container_name: vault
@@ -208,12 +212,16 @@ services:
     command: ["chown", "-R", "100:1000", "/vault/keys"]
     volumes:
       - vault-keys:/vault/keys
+    security_opt:
+      - no-new-privileges:true
 
   vault-approle-init:
     image: alpine
     command: ["chown", "-R", "100:1000", "/vault/approle"]
     volumes:
       - vault-approle:/vault/approle
+    security_opt:
+      - no-new-privileges:true
 
   vault_init:
     container_name: vault_init
@@ -276,6 +284,8 @@ services:
     command: ["chown", "-R", "65534:65534", "/var/lib/prometheus/data"]
     volumes:
       - prometheus-data:/var/lib/prometheus/data
+    security_opt:
+      - no-new-privileges:true
 
   prometheus:
     container_name: prometheus
@@ -428,6 +438,8 @@ services:
     command: ["chown", "-R", "1000:0", "/usr/share/elasticsearch/backups"]
     volumes:
       - ./backups/elasticsearch:/usr/share/elasticsearch/backups
+    security_opt:
+      - no-new-privileges:true
 
   elasticsearch:
     container_name: elasticsearch

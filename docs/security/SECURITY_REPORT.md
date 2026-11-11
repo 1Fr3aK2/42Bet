@@ -246,7 +246,13 @@ Full reference in `NGINX_CONFIG.md`. Highlights:
 - **Security headers**, applied to all HTTPS responses: `Strict-Transport-Security`,
   `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`,
   `Referrer-Policy: strict-origin-when-cross-origin`,
-  `Content-Security-Policy`. Verified via `curl -I`.
+  `Content-Security-Policy`. Verified via `curl -I`. As a preventive measure,
+  the `X-Powered-By` header that upstream frameworks may add is stripped
+  (`proxy_hide_header X-Powered-By;`), alongside `server_tokens off`, so the
+  backend stack is not disclosed. None of the current upstreams sends it, so the
+  directive guards against a future framework change rather than fixing a leak.
+- **HTTP/2** is enabled on the HTTPS server block (`http2 on;`), negotiated via
+  ALPN; clients without HTTP/2 fall back to HTTP/1.1.
 - **WebSocket support** (`/socket.io/`, added by the frontend teammate for
   real-time crypto price data) required a scoped ModSecurity exclusion for rule
   `920420`, implemented as runtime rule `1000013` in `before-crs.conf`
@@ -266,6 +272,9 @@ Full reference in `NGINX_CONFIG.md`. Highlights:
   cover four more Kibana false positives (`932236`, `932240`, `942220`,
   `934190`); all five now live in runtime rule `1000012` in `before-crs.conf`.
   The reasoning for each rule is in `nginx/modsecurity/WAF_HARDENING.md`.
+  A narrower rule, `1000014`, removes only the `attack-sqli` group from the
+  `Referer` header under `/kibana`, because Kibana keeps its page state in the
+  URL and the browser sends it back as `Referer` on every request.
 - **Rate-limited zones per module**: `login` (10r/m), `forum` (30r/s),
   `admin_api` (30r/s), and — added in this phase — `health` (10r/s, burst 20,
   `nodelay`).

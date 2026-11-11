@@ -61,6 +61,24 @@ curl -skI https://localhost | grep -i '^server'
 ```
 Expected: `server: nginx` (no version number).
 
+### Hiding `X-Powered-By`
+
+```nginx
+proxy_hide_header X-Powered-By;
+```
+
+Set at the `server{}` level, it strips the `X-Powered-By` header that upstream frameworks (e.g. Express) add to their responses, so the backend stack is not disclosed to clients. If a `location` ever defines its own `proxy_hide_header`, it replaces this one for that route and the directive must be repeated there.
+
+None of the current upstreams (`frontend`, `backend`) sends this header, so this is a preventive measure: it keeps the stack hidden if a framework or a future service starts adding it.
+
+**Tested with:**
+```bash
+curl -skI https://localhost/ | grep -i x-powered-by
+docker compose exec nginx curl -sI http://frontend:80 | grep -i x-powered-by
+docker compose exec nginx curl -sI http://backend:8000/health | grep -i x-powered-by
+```
+Expected: no output from any of the three (the last two confirm what the upstreams send, the first what reaches the client).
+
 ## Rate limiting
 
 Four active zones, with different values depending on the sensitivity and expected traffic pattern of the endpoint being protected:
