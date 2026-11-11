@@ -459,7 +459,7 @@ Things worth knowing if this is touched again:
 ## `before-crs.conf` — Kibana internal API traffic (Rule 1000012)
 
 ```apache
-SecRule REQUEST_URI "@rx ^/kibana(/|\?|$)" \
+SecRule REQUEST_URI "@rx ^/+kibana(/|\?|$)" \
   "id:1000012,\
   phase:1,\
   nolog,\
@@ -475,13 +475,14 @@ SecRule REQUEST_URI "@rx ^/kibana(/|\?|$)" \
 **Symptom:** When navigating Kibana dashboards, saving objects, or running search filters, requests to internal Kibana APIs produced false positives under Paranoia Level 2.
 
 **Cause:** Kibana's frontend communicates with its Node.js backend using internal query DSLs, Lucene expressions, complex nested JSON states, and URL parameters. Several CRS rules match harmless query fragments:
-- `932236`, `932240`: Unix command injection patterns matched in internal query structures and variables.
-- `942220`, `942340`: SQL-injection patterns matched in Kibana filter DSLs (e.g. numeric expressions, boolean chains).
-- `934190`: PHP injection rule matching URL parameters.
+- `932236`, `932240`: Unix command injection patterns matched in internal query structures, session tokens, and variables.
+- `942340`: SQL injection via libinjection matched in search queries and filter DSLs containing wildcards or quotes.
+- `942220`: Integer overflow detection triggered by large epoch millisecond timestamps and numeric offsets.
+- `934190`: Server-Side Request Forgery (SSRF) detection triggered by scheme-less `localhost/` inside `currentURL` redirection hints.
 
 Previously, these were disabled via inline `modsecurity_rules` inside Nginx's `location /kibana/` block. Migrating them to rule `1000012` in `before-crs.conf` brings all WAF customizations into a single, versioned, runtime exclusion file.
 
-**Fix:** Rule `1000012` disables these five specific rules for requests whose URI starts with `/kibana` using `@rx ^/kibana(/|\?|$)`.
+**Fix:** Rule `1000012` disables these five specific rules for requests whose URI path starts with `/kibana` using `@rx ^/+kibana(/|\?|$)` (matching multiple leading slashes to mirror Nginx URI normalization).
 
 What keeps this safe:
 - **Scope limited to `/kibana/`.** These five rules remain fully active for all other routes (frontend, backend, forum, auth, admin API).
@@ -492,7 +493,7 @@ What keeps this safe:
 ## `before-crs.conf` — Socket.IO traffic (Rule 1000013)
 
 ```apache
-SecRule REQUEST_URI "@rx ^/socket\.io(/|\?|$)" \
+SecRule REQUEST_URI "@rx ^/+socket\.io(/|\?|$)" \
   "id:1000013,\
   phase:1,\
   nolog,\
@@ -503,11 +504,11 @@ SecRule REQUEST_URI "@rx ^/socket\.io(/|\?|$)" \
 
 **Symptom:** Socket.IO connections (used by the frontend for live Kraken price feeds and real-time betting updates) failed during handshake and polling phases with `403 Forbidden`.
 
-**Cause:** Socket.IO clients use a transport fallback sequence starting with HTTP long-polling (`GET`/`POST`) before upgrading to WebSockets. The client sends payload requests with non-standard Content-Type headers or parameter formats that trip CRS rule `920420` (*Request content_type is not allowed by policy*).
+**Cause:** Socket.IO clients use a transport fallback sequence starting with HTTP long-polling (`GET`/`POST`) before upgrading to WebSockets. The client sends payload requests with non-standard Content-Type headers or parameter formats that trip CRS rule `920420` (*Request Content-Type is not allowed by policy*).
 
 Previously, this was disabled via an inline `modsecurity_rules` block inside Nginx's `location /socket.io/`. Migrating it to runtime rule `1000013` in `before-crs.conf` brings all ModSecurity exclusions into the central, upgrade-safe exclusion file and eliminates inline Nginx WAF directives entirely.
 
-**Fix:** Rule `1000013` disables only rule `920420` for requests whose URI starts with `/socket.io/` using `@rx ^/socket\.io(/|\?|$)`.
+**Fix:** Rule `1000013` disables only rule `920420` for requests whose URI starts with `/socket.io` using `@rx ^/+socket\.io(/|\?|$)`.
 
 What keeps this safe:
 - **Rule-scoped.** Only rule `920420` is bypassed. All other CRS inspection rules (SQLi, XSS, RCE, protocol violations) remain fully active on `/socket.io/` traffic.
