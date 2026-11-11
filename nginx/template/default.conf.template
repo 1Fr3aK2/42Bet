@@ -32,6 +32,7 @@
     server {
         listen ${SSL_PORT} ssl;
         listen [::]:${SSL_PORT} ssl;
+        http2 on;
 
         server_name  ${SERVER_NAME};
 
@@ -122,10 +123,6 @@
         }
 
         location /socket.io/ {
-            modsecurity on;
-            modsecurity_rules '
-                SecRuleRemoveById 920420
-            ';
             proxy_pass $upstream_backend;
             proxy_http_version 1.1;
             proxy_set_header Host $host;
@@ -162,14 +159,6 @@
         }
 
         location /kibana/ {
-            modsecurity on;
-            modsecurity_rules '
-                SecRuleRemoveById 932236
-                SecRuleRemoveById 932240
-                SecRuleRemoveById 942220
-                SecRuleRemoveById 942340
-                SecRuleRemoveById 934190
-            ';
             proxy_pass $upstream_kibana;
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;

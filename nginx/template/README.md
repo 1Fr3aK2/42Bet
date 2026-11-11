@@ -4,23 +4,44 @@ Documentation for the nginx configuration (reverse proxy + WAF) of the
 42Bet project.
 
 > **Note on this revision:** this document has been updated to match the
-> current `default.conf.template`. The rate limiting, security headers (including
-> `Content-Security-Policy`), nginx version hiding (`server_tokens off`), the
-> public health check (aggregated state only), the Grafana Live WebSocket route
-> and per-module routing sections below reflect the live configuration.
+> current `default.conf.template`. HTTP/2 negotiation, rate limiting, security
+> headers (including `Content-Security-Policy`), nginx version hiding (`server_tokens off`),
+> the public health check (aggregated state only), the Grafana Live WebSocket route,
+> and per-module routing sections below reflect the live configuration. All ModSecurity
+> exclusions have been migrated out of Nginx inline directives and into centralized
+> runtime rules in `nginx/modsecurity/before-crs.conf`.
 
 ## General structure
 
 The file defines two `server{}` blocks:
 
 - **Port `${PORT}` (80)** — only exists to redirect all HTTP traffic to HTTPS (`301`), and to expose `/stub_status` (used by the container's healthcheck and by Prometheus's `nginx_exporter`).
-- **Port `${SSL_PORT}` (443)** — where all the real logic lives: TLS, WAF (ModSecurity), security headers, rate limiting, and the proxy to the various internal services (frontend, backend, Grafana, Kibana, and the static status page; Prometheus is deliberately not published).
+- **Port `${SSL_PORT}` (443)** — where all the real logic lives: TLS termination, HTTP/2 (`http2 on;`), WAF (ModSecurity), security headers, rate limiting, and the proxy to the various internal services (frontend, backend, Grafana, Kibana, and the static status page; Prometheus is deliberately not published).
 
 Variables (`${PORT}`, `${SERVER_NAME}`, `${SSL_CERT_FILE}`, etc.) are substituted at startup by the `envsubst` mechanism in the `owasp/modsecurity-crs` image, from the values defined under `environment:` in `docker-compose.yml`. **The filename must end in `.template`** — that suffix is what the image's startup script uses to know which files to process.
 
 Because the substitution only happens when the container starts, **editing the template is not enough: recreate the container** (`docker compose up -d --force-recreate nginx`) and check the active config with `docker compose exec nginx nginx -T`.
 
 The directives at the top of the file (`server_tokens`, `map`, `limit_req_zone`) live outside any `server{}` block: the image includes this file inside the main `http{}` context, so they apply to both servers.
+
+## HTTP/2 Support
+
+```nginx
+server {
+    listen ${SSL_PORT} ssl;
+    listen [::]:${SSL_PORT} ssl;
+    http2 on;
+```
+
+HTTP/2 is enabled on the SSL server block using the modern `http2 on;` directive (standard in Nginx 1.25+, running Nginx 1.30.1 inside the container).
+
+- **Why:** HTTP/2 introduces binary framing and request multiplexing over a single TCP connection, eliminating head-of-line blocking for frontend assets and API calls.
+- **ALPN negotiation:** Browsers and clients negotiate `h2` during the TLS handshake via Application-Layer Protocol Negotiation (ALPN). Clients not supporting HTTP/2 seamlessly fall back to HTTP/1.1.
+- **Tested with:**
+  ```bash
+  curl -v --http2 -k https://localhost 2>&1 | grep -E "ALPN|HTTP/"
+  ```
+  Expected: `* ALPN, server accepted to use h2` and `< HTTP/2 200`.
 
 ## Hiding the nginx version
 
@@ -199,10 +220,6 @@ location /ws {
 }
 
 location /socket.io/ {
-    modsecurity on;
-    modsecurity_rules '
-        SecRuleRemoveById 920420
-    ';
     proxy_pass $upstream_backend;
     proxy_http_version 1.1;
     proxy_set_header Host $host;
@@ -218,7 +235,7 @@ No dedicated rate limit on either — these are persistent connections (live BTC
 
 WebSockets explicitly enforce `proxy_http_version 1.1;` (HTTP 1.0 does not support protocol upgrades), use the `$connection_upgrade` map (`upgrade` when the client sent an `Upgrade` header, `close` otherwise), and set `proxy_read_timeout 3600s;` to prevent idle connections from being dropped by the proxy's default 60s timeout.
 
-`/socket.io/` (added for the frontend's real-time crypto price data) needs one scoped ModSecurity exclusion: **rule `920420`** was flagging legitimate WebSocket upgrade requests as malformed. The WAF is **not** disabled for this location (`modsecurity on;` is kept explicit) — only this one rule is removed, scoped to this `location` block alone; every other rule still applies to WebSocket traffic.
+`/socket.io/` (added for the frontend's real-time crypto price data) requires one scoped ModSecurity exclusion: **rule `920420`** (*Request Content-Type is not allowed by policy*) flags WebSocket and polling handshakes as malformed. To keep Nginx templates completely declarative and avoid inline directives, this exclusion is implemented as runtime rule **`1000013`** in `nginx/modsecurity/before-crs.conf`, scoped specifically to `@rx ^/+socket\.io(/|\?|$)`. The leading `/+` matches repeated slashes (e.g. `//socket.io/`), mirroring how Nginx normalizes the URI before choosing a `location`, because ModSecurity's `REQUEST_URI` is the raw URI. The WAF is **not** disabled for this location (`modsecurity on;` is inherited from the server block) — only rule `920420` is bypassed for this route; every other CRS rule remains active.
 
 Grafana has its own WebSocket route (`/grafana/api/live/`), documented under "Infrastructure UIs" below, which reuses the same `$connection_upgrade` map.
 
@@ -247,14 +264,6 @@ location /prometheus {
 }
 
 location /kibana/ {
-    modsecurity on;
-    modsecurity_rules '
-        SecRuleRemoveById 932236
-        SecRuleRemoveById 932240
-        SecRuleRemoveById 942220
-        SecRuleRemoveById 942340
-        SecRuleRemoveById 934190
-    ';
     proxy_pass $upstream_kibana;
     proxy_set_header Host $host;
     proxy_set_header X-Real-IP $remote_addr;
@@ -295,7 +304,7 @@ curl -k -i -N --http1.1 \
 - **`942220`** ("Looking for integer overflow attacks", critical severity) — flags very large integers or a specific "magic number" float value in request data. Kibana's internal APIs routinely pass large epoch-millisecond timestamps and offsets in JSON request bodies, which plausibly trips this rule on ordinary use.
 - **`934190`** ("Possible Server Side Request Forgery (SSRF) Attack: Scheme-less localhost or internal hostname detected") — confirmed: during login, Kibana's `/kibana/internal/security/login` endpoint sends a JSON payload containing `currentURL: https://localhost/kibana/login...`. This rule flags the string `localhost/` inside request arguments as a potential SSRF attempt, causing legitimate logins to be blocked with `403`.
 
-All five exclusions follow the same pattern used for the confirmed `942340` and the `/socket.io/` exclusion above: the rule is removed only inside this one `location` block (`modsecurity on;` stays active), not disabled globally — the rest of the WAF's protection, including the rest of the RCE and SQLi rule families, remains in effect for every other route.
+All five exclusions are centralized in `nginx/modsecurity/before-crs.conf` under rule **`1000012`** (`@rx ^/+kibana(/|\?|$)`, with the same leading `/+` as above to mirror Nginx URI normalization), alongside the dedicated cookie rule `1000005` (`REQUEST_COOKIES:sid`), login rule `1000011` (`ARGS:json.currentURL`), and Referer header rule `1000014` (`attack-sqli` on `REQUEST_HEADERS:Referer`). No inline ModSecurity directives remain in Nginx: the template remains strictly focused on proxying, while all WAF logic is maintained and versioned in `before-crs.conf`.
 
 ## Static status page
 
