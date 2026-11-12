@@ -494,10 +494,13 @@ nginx DNS caching); what remains open:
   clears the failed-attempt counter for a real account remains dependent on
   the registration flow being fully exercised in a test environment; not a
   rate-limiting defect, a test-coverage gap.
-- **Elasticsearch/WAF-audit data has no backup** — by design: ILM already
-  caps its useful lifetime at 14 days, and it is operational/diagnostic data,
-  not a system of record (see `docs/DISASTER_RECOVERY.md` §3).
-
+- **Elasticsearch data is backed up with daily snapshots, not treated as a
+  system of record** — the SLM policy `daily-snapshots` writes a snapshot of
+  all indices at midnight (UTC) to the `local_backup` repository
+  (`./backups/elasticsearch` on the host), kept for 30 days (at least 5, at
+  most 30 snapshots). The repository lives on the same machine as the data, so
+  it protects against index corruption or accidental deletion, not against the
+  loss of the host (see `docs/DISASTER_RECOVERY.md` §3).
 ---
 
 ## 12. Deliverables Produced

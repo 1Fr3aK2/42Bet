@@ -196,7 +196,7 @@ volume — including `postgres-data`, `redis-data`, `elasticsearch-data`,
 | Volume | Recoverable? | How |
 |---|---|---|
 | `postgres-data` | Yes | Restore from `backups/postgres/` as in Section 2, once the stack is back up (the bind-mounted directory is not touched by volume removal). The stack's own startup recreates `app_user` first, because roles are not part of the dump |
-| `elasticsearch-data` | Not meaningfully | Logs/audit data are not currently backed up separately; loss is acceptable since ILM already limits their value to 14 days of operational data, not a system of record |
+| `elasticsearch-data` | Partially | Daily snapshots (SLM policy `daily-snapshots`, repository `local_backup`) are written to `./backups/elasticsearch` on the host and kept for 30 days. That directory is a bind mount, so volume removal does not touch it. Only data up to the last snapshot can be restored, and the `local_backup` repository must exist on the rebuilt cluster before a restore. The data is operational/diagnostic (ILM keeps it for 14 days), not a system of record, so restoring it is optional |
 | `redis-data` | No | Acceptable loss — Redis here is used as a cache/session store, not a source of truth |
 | `grafana-db`, `prometheus-data` | No | Acceptable loss — dashboards are defined as code in `monitoring/grafana/provisioning` and are recreated automatically on next boot; metrics history is not required to survive a rebuild |
 | `vault-data`, `vault-keys`, `vault-approle` | **No — by design** | See Section 4 |
@@ -207,6 +207,30 @@ of truth and not trivially regenerated. This is intentional: the project's
 sensitive configuration (JWT signing secret, admin credentials, API keys) lives
 in Vault rather than in the database specifically so that losing the database
 does not also mean losing those secrets, and vice versa.
+
+### Restoring Elasticsearch from a snapshot (optional)
+
+List the available snapshots:
+
+```bash
+docker compose exec elasticsearch sh -c \
+  'curl -sf -u elastic:$ELASTIC_PASSWORD "http://localhost:9200/_snapshot/local_backup/_all?pretty"'
+```
+
+Restore the log indices from the chosen snapshot, without the global state so
+that the users and roles provisioned by the init services are not overwritten:
+
+```bash
+docker compose exec elasticsearch sh -c \
+  'curl -sf -u elastic:$ELASTIC_PASSWORD -X POST \
+   "http://localhost:9200/_snapshot/local_backup/<snapshot_name>/_restore" \
+   -H "Content-Type: application/json" \
+   -d "{\"indices\":\"42bet-logs-*,waf-audit-*\",\"include_global_state\":false}"'
+```
+
+Run this on a cluster where indices with the same names do not already exist
+(for example right after a `make re`), otherwise the restore of those indices
+fails.
 
 ---
 
@@ -295,7 +319,7 @@ Since there is no after-the-fact recovery, the mitigation is preventive:
 | Failure | Recoverable? | Procedure |
 |---|---|---|
 | Database corrupted/lost | Yes | Section 2 — restore from `backups/postgres/*.sql`, then reapply `app_user` (step 2.6) |
-| Full volume wipe (`make re`) — app data (Postgres, Redis, ES, Grafana, Prometheus) | Partially | Postgres via Section 2; the rest is acceptable, regenerable loss |
+| Full volume wipe (`make re`) — app data (Postgres, Redis, ES, Grafana, Prometheus) | Partially | Postgres via Section 2; Elasticsearch from the daily snapshots in `./backups/elasticsearch` if needed; Redis, Grafana and Prometheus are acceptable, regenerable loss |
 | Full volume wipe (`make re`) — Vault | No, by design | Vault reinitializes from `.env`; see Section 4 |
 | Vault sealed after a partial restart (keys intact) | Yes | `vault operator unseal`, Section 4 |
 | Vault keys lost independently of Vault data | No | Unrecoverable; this is why `.env` is treated as the real source of truth for secret values |
