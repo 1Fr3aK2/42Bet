@@ -9,13 +9,16 @@ import {
 
 export class CreateUserDto {
   @IsString()
+  @MaxLength(18)
   @Matches(USERNAME_PATTERN, { message: USERNAME_MESSAGE })
   username: string;
 
   @IsEmail()
+  @MaxLength(40)
   email: string;
 
   @IsString()
+  @MaxLength(30)
   @MinLength(8)
   password: string;
 

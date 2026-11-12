@@ -12,6 +12,7 @@ import { PublicApiModule } from './public-api/public-api.module';
 import { BetsModule } from './bets/bets.module';
 import { AnalyticsModule } from './analytics/analytics.module';
 import { CandlesModule } from './candles/candles.module';
+import { WalletModule } from './wallet/wallet.module';
 
 @Module({
   imports: [
@@ -19,6 +20,7 @@ import { CandlesModule } from './candles/candles.module';
     UsersModule,
     ForumModule,
     ModerationModule,
+    WalletModule,
 	  AuthModule,
 	  HealthModule,
     MetricsModule,

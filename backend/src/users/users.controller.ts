@@ -7,6 +7,8 @@ import {
 	Post,
 	Request,
 	UseGuards,
+	ParseIntPipe,
+	Delete,
   } from '@nestjs/common';
   
   import { UsersService } from './users.service';
@@ -47,6 +49,7 @@ import {
 		Number(id),
 		updateUserRoleDto.role,
 	  );
+	
 	}
   
 	@UseGuards(JwtAuthGuard)
@@ -78,4 +81,11 @@ import {
 		updatePasswordDto,
 	  );
 	}
-  }
+
+	@UseGuards(JwtAuthGuard, RolesGuard)
+    @Roles(Role.ADMIN)
+    @Delete(':id')
+    deleteUser(@Param('id', ParseIntPipe) id: number) {
+        return this.usersService.deleteUser(id);
+    }
+}
