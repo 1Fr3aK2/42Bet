@@ -92,9 +92,9 @@ limit_req_zone $binary_remote_addr zone=health:10m rate=10r/s;
 
 | Zone | Applied to | Limit | Burst | Why |
 |---|---|---|---|---|
-| `login` | `/auth` | 10 requests/minute per IP | 5 (`limit_req_status 429`) | Sensitive action (account access) — protects against brute-force by IP. Complemented by a per-account rate limit in the backend (Redis), documented in `RATE_LIMITING.md`. |
+| `login` | `/auth` | 10 requests/minute per IP | 5 (`limit_req_status 429`) | Sensitive action (account access) — protects against brute-force by IP. Complemented by a per-account rate limit in the backend (Redis), documented in `backend/src/rate-limiter/README.md`. |
 | `forum` | `/forum` | 30 requests/second per IP | 5 (`limit_req_status 429`) | General browsing + content-creation traffic. IP-level limit only; per-user, per-action limits (posts, comments, reports) are enforced separately in the backend via `RateLimiterService` — see "Per-user rate limiting" below. |
-| `admin_api` | `/api/admin` | 30 requests/second per IP | 5 (`limit_req_status 429`) | The Admin Public API. IP-level limit at nginx complements a second, per-client-IP limit enforced in the backend itself (`AdminApiRateLimitGuard`, 100 req/60s) — see `SECURITY_REPORT.md` §4 for the bug found and fixed in that guard. |
+| `admin_api` | `/api/admin` | 30 requests/second per IP | 5 (`limit_req_status 429`) | The Admin Public API. IP-level limit at nginx complements a second, per-client-IP limit enforced in the backend itself (`AdminApiRateLimitGuard`, 100 req/60s) — see `docs/security/SECURITY_REPORT.md` §4 for the bug found and fixed in that guard. |
 | `health` | `/health` | 10 requests/second per IP | 20, `nodelay` | Public health-check endpoint, expected to be polled frequently (e.g. by the status page, every 10s). Generous burst so legitimate polling is never delayed, while still bounding abuse. |
 
 The previously-commented `api` zone, kept as a placeholder in earlier revisions of this file, has been superseded: the Admin Public API is live under `/api/admin`, with its own `admin_api` zone above.
@@ -334,7 +334,7 @@ location /status {
 }
 ```
 
-Served directly by nginx as a static file, not proxied to the backend or bundled into the frontend's React app — see `SECURITY_REPORT.md` §7 for the reasoning (a status page needs to stay reachable even if the frontend/backend are the thing that's broken).
+Served directly by nginx as a static file, not proxied to the backend or bundled into the frontend's React app — see `docs/security/SECURITY_REPORT.md` §7 for the reasoning (a status page needs to stay reachable even if the frontend/backend are the thing that's broken).
 
 ## Public health check
 
@@ -389,7 +389,7 @@ The backend-enforced limits for forum endpoints are:
   module; not needed for the current audit finding.
 - **Backend migrations** (`backend_migrate` in `docker-compose.yml`) were the
   root cause of a 500 bug that interfered with testing an earlier revision of
-  this config — documented in `SECURITY_REPORT.md` §8. A second one-shot
+  this config — documented in `docs/security/SECURITY_REPORT.md` §8. A second one-shot
   service, `backend_seed`, follows the same pattern and must also complete
   successfully before the backend is expected to behave correctly.
 - **Response-phase WAF rules (`950100` / `959100`)**: rule `950100` (which scored

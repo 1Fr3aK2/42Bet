@@ -2,7 +2,7 @@
 
 ## Context
 
-This document records the security tests performed against the brute-force and DoS protection implemented on the `/auth/login` endpoint, complementing `SECURITY_TESTING.md` ("Future Tests — Rate limiting" section). It covers the two mechanisms implemented: rate limiting by IP (nginx) and rate limiting by account (backend + Redis).
+This document records the security tests performed against the brute-force and DoS protection implemented on the `/auth/login` endpoint, complementing `docs/security/SECURITY_TESTING.md` ("Future Tests — Rate limiting" section). It covers the two mechanisms implemented: rate limiting by IP (nginx) and rate limiting by account (backend + Redis).
 
 > **Revision (3 Nov 2026):** the per-account counter now belongs to the account
 > (`login_attempts:user:<id>`), not to the text typed in the login field, so the
@@ -45,9 +45,9 @@ done
 
 **Expected result**:
 - First ~6 requests (rate `10r/m` + `burst=5`) → `401` (reach the backend, invalid credentials)
-- Remaining requests → `503` (rejected by nginx before reaching the backend)
+- Remaining requests → `429` (rejected by nginx before reaching the backend; the `/auth` location sets `limit_req_status 429`, otherwise nginx would answer its default `503`)
 
-**How to confirm it passed:** count how many `401`s and `503`s appear in the output; there should be a clear transition from `401` to `503` starting around the 6th/7th request, with no accepted requests afterwards.
+**How to confirm it passed:** count how many `401`s and `429`s appear in the output; there should be a clear transition from `401` to `429` starting around the 6th/7th request, with no accepted requests afterwards.
 
 ---
 
@@ -93,7 +93,7 @@ The first command lists the counters. Use the `login_attempts:user:<id>` key tha
 - `GET` returns the current number of failed attempts (e.g. `"6"` after Test 10)
 - `TTL` returns a positive, decreasing value in seconds, up to 1800 (30 min) — confirms `EXPIRE` was applied
 
-**Security note:** direct access to Redis requires the password (`-a <password>`) — if this command works without a password, that's a configuration issue to fix (see Test 1 in `SECURITY_TESTING.md`, already validated as secure).
+**Security note:** direct access to Redis requires the password (`-a <password>`) — if this command works without a password, that's a configuration issue to fix (see Test 1 in `docs/security/SECURITY_TESTING.md`, already validated as secure).
 
 ---
 
@@ -125,6 +125,10 @@ docker exec -it redis redis-cli -a <REDIS_PASSWORD> --no-auth-warning GET login_
 - Step 3 → `(nil)` (the key no longer exists — deleted by `resetLimit`)
 
 **Expected conclusion:** confirms that a legitimate user, even after a few mistaken attempts, doesn't end up with "leftover history" after logging in correctly.
+
+**Automated version:** `bash scripts/test-rate-limit-reset.sh` registers a disposable account, builds up three failed attempts (the Redis counter reads `3`) and confirms that a correct login deletes `login_attempts:user:<id>`. It spaces the logins 7 seconds apart and takes about 35 seconds.
+
+**Result (12 Nov 2026):** ✅ 9 passed, 0 failed.
 
 ---
 
@@ -208,17 +212,17 @@ docker exec -it redis redis-cli -a <REDIS_PASSWORD> --no-auth-warning --scan --p
 
 | # | Mechanism | Attack Vector | Expected Result | Status |
 |---|---|---|---|---|
-| 9 | Rate limit by IP (nginx) | Burst of requests, same IP | 503 after burst | ✅ Confirmed (6x 401, then 503; reproduced twice) |
+| 9 | Rate limit by IP (nginx) | Burst of requests, same IP | `429` after burst | ✅ Confirmed (6x 401, then rejected by nginx; reproduced twice) |
 | 10 | Rate limit by account (Redis) | Spaced-out attempts, same account | 401, then `Too many login attempts` on the 6th | ✅ Confirmed (re-checked on 3 Nov 2026 with the S1 test of `scripts/test-security.sh`) |
 | 11 | Redis — direct verification | `GET`/`TTL` on the key | Correct counter and TTL, one key per account | ✅ Confirmed (keys `login_attempts:user:<id>`; the older check gave `GET`=6, `TTL`≈1708s) |
-| 12 | Reset on success | Correct login after failures | Key deleted (`nil`) | ⏳ Blocked — registration endpoint not yet functional, no test account available |
+| 12 | Reset on success | Correct login after failures | Key deleted (`nil`) | ✅ Confirmed on 12 Nov 2026 (`scripts/test-rate-limit-reset.sh`: counter at `3` after three failures, key deleted after the correct login; 9 passed, 0 failed) |
 | 13 | Window expiration | Wait / manual EXPIRE | Counter resets | ✅ Confirmed (manual `EXPIRE 5`, then `GET` returned `nil`) |
 | 14 | Username and email share one counter | Alternate the two spellings of one account | 6th attempt blocked, one Redis key | ✅ Confirmed on 3 Nov 2026 (S1 of `scripts/test-security.sh` went from `200 (bypass total)` to `OK`; one key per account in Redis) |
 | 15 | Unknown identifiers | Attempts on an email without account | Counted by hash, no email in clear | ✅ Confirmed on 3 Nov 2026 (key `login_attempts:unknown:<hash>` observed in Redis, no email in any key name) |
 
 *(Update the "Status" column with ✅/❌ after running each test.)*
 
-**Note:** the initial test run was affected by an unrelated backend bug (HTTP 500 on `/auth/login` due to a pending Prisma migration — see `RATE_LIMITING.md`). Tests 9-11 and 13 were re-run/run after the fix (`backend_migrate` service added to `docker-compose.yml`) and confirmed correct with the backend fully functional. Test 12 remains blocked until the registration endpoint is confirmed functional and a test account is available to log in with correct credentials (also see `SECURITY_REPORT.md` §11, which tracks this same open item).
+**Note:** the initial test run was affected by an unrelated backend bug (HTTP 500 on `/auth/login` due to a pending Prisma migration — see `backend/src/rate-limiter/README.md`). Tests 9-11 and 13 were re-run/run after the fix (`backend_migrate` service added to `docker-compose.yml`) and confirmed correct with the backend fully functional. Test 12 was run later, once registration worked: `scripts/test-rate-limit-reset.sh` passes (see Test 12 above).
 
 ---
 
@@ -232,6 +236,6 @@ docker exec -it redis redis-cli -a <REDIS_PASSWORD> --no-auth-warning --scan --p
 
 ## Future Tests
 
-- **Repeat Test 12 once `/auth/login` no longer depends on a blocked registration flow** — the original blocker (the 500-on-migration bug) was fixed long ago (`backend_migrate` service), but Test 12 specifically still needs a working registration endpoint to create a disposable test account; this is the one remaining item in this document.
-- ~~Rate limiting on the remaining endpoints, once they exist (forum, trades)~~ — **done for the forum.** All three write endpoints (`createPost`, `createComment`, `createReport`) now have per-user rate limiting via the same `RateLimiterService` used here (`forum_post:${userId}` 5/10min, `forum_comment:${userId}` 20/10min, `forum_report:${userId}` 10/hour), unblocked once `JwtAuthGuard` was added to those routes. `createPost` has been tested in production with the same methodology as Tests 9-11 (5×`201`, then `429` on the 6th/7th, Redis counter confirmed) — see `SECURITY_REPORT.md` §4 and `AUTH_HARDENING_REPORT.md` §5 for the full detail; not duplicated here since this document's scope is specifically the login endpoint. A similar per-request test log for `createComment`/`createReport`, and for trades (if/when that module gets its own write-heavy endpoints), remains open.
+- ~~Repeat Test 12 once `/auth/login` no longer depends on a blocked registration flow~~ — **done:** registration works and `scripts/test-rate-limit-reset.sh` passes (see Test 12).
+- ~~Rate limiting on the remaining endpoints, once they exist (forum, trades)~~ — **done for the forum.** All three write endpoints (`createPost`, `createComment`, `createReport`) now have per-user rate limiting via the same `RateLimiterService` used here (`forum_post:${userId}` 5/10min, `forum_comment:${userId}` 20/10min, `forum_report:${userId}` 10/hour), unblocked once `JwtAuthGuard` was added to those routes. `createPost` has been tested in production with the same methodology as Tests 9-11 (5×`201`, then `429` on the 6th/7th, Redis counter confirmed) — see `docs/security/SECURITY_REPORT.md` §4 and `docs/security/AUTH_HARDENING_REPORT.md` §5 for the full detail; not duplicated here since this document's scope is specifically the login endpoint. A similar per-request test log for `createComment`/`createReport`, and for trades (if/when that module gets its own write-heavy endpoints), remains open.
 - Test the per-IP rate limit's behavior when nginx sits behind a shared NAT (simulate multiple "users" from the same IP) to confirm the current values (`10r/m`, `burst=5`) don't cause excessive false lockouts.
