@@ -5,6 +5,8 @@ import { PrismaService } from '../prisma/prisma.service';
 import { LoginDto } from './login.dto';
 import { RateLimiterService } from '../rate-limiter/rate-limiter.service';
 import { createHash } from 'crypto';
+import { Role } from '@prisma/client';
+
 
 @Injectable()
 export class AuthService {
@@ -58,6 +60,8 @@ export class AuthService {
     const payload = {
       sub: user.id,
       username: user.username,
+      email: user.email,
+      role: user.role,
     };
 
     return {
