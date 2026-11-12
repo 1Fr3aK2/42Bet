@@ -49,6 +49,11 @@ restored. The restore procedure below therefore also reapplies the role's
 privileges explicitly (step 2.6), as a safeguard. If `--no-acl` is ever added
 to the backup script, that step becomes mandatory.
 
+**Elasticsearch is covered separately.** Logs and WAF audit data are not part of
+`postgres_backup`. The `elasticsearch_ilm_init` service registers a daily
+snapshot policy for them (`daily-snapshots`, repository `local_backup`, kept
+for 30 days). See Section 3.
+
 ---
 
 ## 2. Restoring the database from a backup
@@ -196,17 +201,19 @@ volume — including `postgres-data`, `redis-data`, `elasticsearch-data`,
 | Volume | Recoverable? | How |
 |---|---|---|
 | `postgres-data` | Yes | Restore from `backups/postgres/` as in Section 2, once the stack is back up (the bind-mounted directory is not touched by volume removal). The stack's own startup recreates `app_user` first, because roles are not part of the dump |
-| `elasticsearch-data` | Partially | Daily snapshots (SLM policy `daily-snapshots`, repository `local_backup`) are written to `./backups/elasticsearch` on the host and kept for 30 days. That directory is a bind mount, so volume removal does not touch it. Only data up to the last snapshot can be restored, and the `local_backup` repository must exist on the rebuilt cluster before a restore. The data is operational/diagnostic (ILM keeps it for 14 days), not a system of record, so restoring it is optional |
+| `elasticsearch-data` | Partially | Daily snapshots (SLM policy `daily-snapshots`, repository `local_backup`) are written to `./backups/elasticsearch` on the host and kept for 30 days (at least 5, at most 30 snapshots). That directory is a bind mount, so volume removal does not touch it, and `ilm-init.sh` re-registers the repository and the policy on every startup. Only data up to the last snapshot can be restored. The repository lives on the same machine as the data, so it does not protect against the loss of the host. The data is operational/diagnostic (ILM keeps it for 14 days), not a system of record, so restoring it is optional |
 | `redis-data` | No | Acceptable loss — Redis here is used as a cache/session store, not a source of truth |
 | `grafana-db`, `prometheus-data` | No | Acceptable loss — dashboards are defined as code in `monitoring/grafana/provisioning` and are recreated automatically on next boot; metrics history is not required to survive a rebuild |
 | `vault-data`, `vault-keys`, `vault-approle` | **No — by design** | See Section 4 |
 
-In practice, the only volume in this list with an actual recovery procedure is
-`postgres-data`, because it is the only one holding data that is both a source
-of truth and not trivially regenerated. This is intentional: the project's
-sensitive configuration (JWT signing secret, admin credentials, API keys) lives
-in Vault rather than in the database specifically so that losing the database
-does not also mean losing those secrets, and vice versa.
+In practice, `postgres-data` is the only volume whose recovery is required,
+because it is the only one holding data that is both a source of truth and not
+trivially regenerated. Elasticsearch has an optional snapshot restore (below),
+but its content is diagnostic and ILM expires it after 14 days anyway. This is
+intentional: the project's sensitive configuration (JWT signing secret, admin
+credentials, API keys) lives in Vault rather than in the database specifically
+so that losing the database does not also mean losing those secrets, and vice
+versa.
 
 ### Restoring Elasticsearch from a snapshot (optional)
 
@@ -228,9 +235,13 @@ docker compose exec elasticsearch sh -c \
    -d "{\"indices\":\"42bet-logs-*,waf-audit-*\",\"include_global_state\":false}"'
 ```
 
-Run this on a cluster where indices with the same names do not already exist
-(for example right after a `make re`), otherwise the restore of those indices
-fails.
+Only indices that do not already exist on the cluster can be restored. After a
+`make re` the stack starts writing to the current day's indices straight away,
+so those names collide with the snapshot's copy and their restore fails; older
+days restore normally. To restore the current day's index as well, either
+delete the new one first (it only holds data written since the rebuild) or
+restore it under a different name with the restore API's `rename_pattern` and
+`rename_replacement` options.
 
 ---
 
@@ -242,7 +253,7 @@ tooling.
 
 ### Why this is unrecoverable by design
 
-Vault encrypts everything it stores (`secret/jwt`, `secret/admin`, the AppRole
+Vault encrypts everything it stores (`secret/jwt`, `secret/admin-account`, the AppRole
 credentials the backend uses, etc.) with a master key that is itself split into
 key shares (Shamir's Secret Sharing) at `vault operator init` time. Those shares
 — along with the initial root token — are what `vault-init.sh` writes to
@@ -261,7 +272,7 @@ keys are gone, the secrets are gone.
 - If both `vault-data` and `vault-keys` are lost together — which is exactly
   what happens on a `make re`, since `docker system prune` removes all volumes
   at once — Vault is reinitialized from scratch by `vault_init` on the next
-  boot. This is not a recovery; it is starting over. `vault_init.sh` reads the
+  boot. This is not a recovery; it is starting over. `vault-init.sh` reads the
   current `.env` values (`JWT_SECRET`, `ADMIN_PASSWORD`, `ADMIN_API_KEY`, etc.)
   and writes them into the freshly initialized Vault, so the *values* the
   application ends up using come from the `.env` file, not from any backup of
@@ -285,11 +296,11 @@ Since there is no after-the-fact recovery, the mitigation is preventive:
   propagate on its own** (observed directly during this project's work: a
   `restart` does not re-read `.env` into a running container, and `vault_init`
   does not re-run its provisioning steps against an already-bootstrapped
-  Vault — see `VAULT_PRODUCTION.md`, "Idempotent bootstrap and root token
+  Vault — see `vault/VAULT_PROD_MODE.md`, "Idempotent bootstrap and root token
   revocation"). If a secret value needs to change without a full `make re`,
   it has to be written into Vault directly with `vault kv put`.
   **The root token saved in `/vault/keys/init.json` is no longer usable for
-  this by default** — `vault_init.sh` now revokes it automatically once
+  this by default** — `vault-init.sh` now revokes it automatically once
   bootstrap completes, as a security hardening measure. A fresh root token
   has to be generated first, using the unseal key shares (still valid; only
   the root token itself was revoked). On Vault 2.x, `generate-root` also
