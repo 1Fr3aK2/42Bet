@@ -69,6 +69,7 @@ vault kv put secret/redis password="${REDIS_PASSWORD}"
 vault kv put secret/admin-api key="${ADMIN_API_KEY}"
 vault kv put secret/admin-account username="${ADMIN_USERNAME}" email="${ADMIN_EMAIL}" password="${ADMIN_PASSWORD}"
 vault kv put secret/jwt secret="${JWT_SECRET}"
+vault kv put secret/elasticsearch-monitor username="es_monitor" password="${ES_MONITOR_PASSWORD}"
 
 # 5. Load the policy
 vault policy write backend-policy /etc/vault/config/backend-policy.hcl

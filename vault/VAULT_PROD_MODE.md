@@ -86,8 +86,8 @@ The script handles, in order:
 4. **Enabling the `secret/` KV v2 engine** — dev-mode auto-mounts this;
    production mode doesn't, so it has to be enabled explicitly
    (`vault secrets enable -path=secret -version=2 kv`), idempotently.
-5. **Storing the five secrets** (Postgres, Redis, admin API key, admin
-   account, JWT secret). The Postgres entry holds the credentials of
+5. 5. **Storing the six secrets** (Postgres, Redis, admin API key, admin
+   account, JWT secret, Elasticsearch monitoring user). The Postgres entry holds the credentials of
    `app_user`, the backend's least-privilege database role (audit finding
    S9), not those of the `POSTGRES_USER` superuser — see
    `postgres/init/ensure-app-user.sh`.
@@ -139,7 +139,7 @@ real multi-host deployment.
 **New since the previous revision of this document**, and the most
 behaviorally significant change in this update.
 
-After the five secrets, the policy, and the AppRole are provisioned
+After the six secrets, the policy, and the AppRole are provisioned
 (steps 4–8 above), the script now **revokes the Vault root token it used to
 do all of this** (`vault token revoke`). This closes a real gap noted
 previously only as an accepted limitation ("the root token should be
@@ -298,6 +298,15 @@ will not rewrite the secret, so the backend keeps connecting with the old
 the stack is rebuilt with `make re`. The `postgres_app_user_init` service
 creates the database role on its own on every `docker compose up`, so only
 the Vault side needs this manual step.
+
+**The same applies to `elasticsearch-monitor`** (the `es_monitor` health-check
+user). On an environment whose Vault was bootstrapped before this change,
+`vault_init` exits early, so neither `secret/elasticsearch-monitor` nor the
+updated `backend-policy` is provisioned, and `loadSecretsFromVault()` throws
+when it cannot read the secret, so the backend cannot finish its bootstrap.
+`ES_MONITOR_PASSWORD` must also be set in `.env`, otherwise
+`elasticsearch_ilm_init` exits on its first line. The path verified for this
+change is a full `make re`, which re-initializes Vault from `.env`.
 
 ## Operational Note: Vault Restarts
 

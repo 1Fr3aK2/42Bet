@@ -17,3 +17,7 @@ path "secret/data/admin-account" {
 path "secret/data/jwt" {
   capabilities = ["read"]
 }
+
+path "secret/data/elasticsearch-monitor" {
+  capabilities = ["read"]
+}

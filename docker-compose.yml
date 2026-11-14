@@ -52,7 +52,6 @@ services:
       VAULT_ADDR: ${VAULT_ADDR}
       VAULT_CACERT: ${VAULT_CACERT}
       NODE_EXTRA_CA_CERTS: ${VAULT_CACERT}
-      ELASTIC_PASSWORD: "${ELASTIC_PASSWORD}"
     volumes:
       - ./vault/certs:/etc/vault/certs:ro
       - vault-approle:/vault/approle:ro
@@ -241,6 +240,7 @@ services:
       ADMIN_EMAIL: ${ADMIN_EMAIL}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD}
       JWT_SECRET: ${JWT_SECRET}
+      ES_MONITOR_PASSWORD: ${ES_MONITOR_PASSWORD}
     entrypoint: ["sh", "/etc/vault/config/vault-init.sh"]
     volumes:
       - ./vault/config:/etc/vault/config:ro
@@ -521,6 +521,7 @@ services:
       - 42Bet
     environment:
       ELASTIC_PASSWORD: "${ELASTIC_PASSWORD}"
+      ES_MONITOR_PASSWORD: "${ES_MONITOR_PASSWORD}"
     entrypoint: ["/bin/sh"]
     command: ["/scripts/ilm-init.sh"]
     volumes:

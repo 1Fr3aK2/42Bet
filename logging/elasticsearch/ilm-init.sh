@@ -1,6 +1,8 @@
 #!/bin/sh
 set -e
 
+: "${ES_MONITOR_PASSWORD:?ES_MONITOR_PASSWORD is not set}"
+
 echo "Waiting for Elasticsearch to be ready..."
 until curl -sf -u "elastic:$ELASTIC_PASSWORD" "http://elasticsearch:9200/_cluster/health" > /dev/null; do
   sleep 2
@@ -135,6 +137,23 @@ curl -sf -u "elastic:$ELASTIC_PASSWORD" -X POST "http://elasticsearch:9200/_secu
   -d '{
     "password": "'"$ELASTIC_PASSWORD"'",
     "roles": ["logstash_writer_role"]
+  }'
+
+# Criar papel de monitorização para o health check do backend (só privilégio de cluster "monitor")
+echo "Creating es_monitor_role role..."
+curl -sf -u "elastic:$ELASTIC_PASSWORD" -X POST "http://elasticsearch:9200/_security/role/es_monitor_role" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "cluster": ["monitor"]
+  }'
+
+# Criar utilizador de monitorização (a password é a mesma que o Vault guarda em secret/elasticsearch-monitor)
+echo "Creating es_monitor user..."
+curl -sf -u "elastic:$ELASTIC_PASSWORD" -X POST "http://elasticsearch:9200/_security/user/es_monitor" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "password": "'"$ES_MONITOR_PASSWORD"'",
+    "roles": ["es_monitor_role"]
   }'
 
 echo "Cleaning up ilm_admin user..."

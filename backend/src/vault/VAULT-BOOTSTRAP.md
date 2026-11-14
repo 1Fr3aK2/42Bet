@@ -1,6 +1,6 @@
 # Vault Secrets Loader
 
-Module of **ft_42Bet** responsible for loading the application's secrets from [HashiCorp Vault](https://www.vaultproject.io/) at service startup, using **AppRole** authentication. No secret lives in a `.env` file, in the source code or in the Docker image: they are fetched from Vault at runtime and injected into `process.env`.
+Module of **42Bet** responsible for loading the application's secrets from [HashiCorp Vault](https://www.vaultproject.io/) at service startup, using **AppRole** authentication. No secret lives in a `.env` file, in the source code or in the Docker image: they are fetched from Vault at runtime and injected into `process.env`.
 
 ## How it works
 
@@ -17,10 +17,12 @@ Module of **ft_42Bet** responsible for loading the application's secrets from [H
 └──────┬───────┘
        │ 3. GET /v1/secret/data/<path>   (X-Vault-Token header)
        │    postgres · redis · admin-api · admin-account · jwt
+       │    · elasticsearch-monitor
        ▼
 ┌──────────────┐
 │ process.env  │  DATABASE_URL, REDIS_URL, ADMIN_API_KEY,
-│              │  ADMIN_USERNAME, ADMIN_EMAIL, ADMIN_PASSWORD, JWT_SECRET
+│              │  ADMIN_USERNAME, ADMIN_EMAIL, ADMIN_PASSWORD, JWT_SECRET,
+│              │  ELASTICSEARCH_MONITOR_USER, ELASTICSEARCH_MONITOR_PASSWORD
 └──────────────┘
 ```
 
@@ -59,6 +61,7 @@ The path is defined by the `APPROLE_DIR` constant at the top of the file.
 | `secret/admin-api`     | `key`                               | `ADMIN_API_KEY`                                         |
 | `secret/admin-account` | `username`, `email`, `password`     | `ADMIN_USERNAME`, `ADMIN_EMAIL`, `ADMIN_PASSWORD`       |
 | `secret/jwt`           | `secret`                            | `JWT_SECRET`                                            |
+| `secret/elasticsearch-monitor` | `username`, `password`      | `ELASTICSEARCH_MONITOR_USER`, `ELASTICSEARCH_MONITOR_PASSWORD` (used only by the health check) |
 
 Example of how to create the secrets:
 
@@ -66,11 +69,12 @@ Example of how to create the secrets:
 vault kv put secret/admin-api key="<value>"
 vault kv put secret/admin-account username="admin" email="admin@example.com" password="<value>"
 vault kv put secret/jwt secret="<value>"
+vault kv put secret/elasticsearch-monitor username="es_monitor" password="<value>"
 ```
 
 ### Minimal policy for the AppRole
 
-The role only needs read access to these three paths (least privilege):
+The role only needs read access to these six paths (least privilege):
 
 ```hcl
 path "secret/data/postgres"      { capabilities = ["read"] }
@@ -78,6 +82,7 @@ path "secret/data/redis"         { capabilities = ["read"] }
 path "secret/data/admin-api"     { capabilities = ["read"] }
 path "secret/data/admin-account" { capabilities = ["read"] }
 path "secret/data/jwt"           { capabilities = ["read"] }
+path "secret/data/elasticsearch-monitor" { capabilities = ["read"] }
 ```
 
 ## Usage

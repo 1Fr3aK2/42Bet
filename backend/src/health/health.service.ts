@@ -63,8 +63,8 @@ export class HealthService {
       await firstValueFrom(
         this.http.get('http://elasticsearch:9200/_cluster/health', {
           auth: {
-            username: 'elastic',
-            password: process.env.ELASTIC_PASSWORD,
+            username: process.env.ELASTICSEARCH_MONITOR_USER ?? '',
+            password: process.env.ELASTICSEARCH_MONITOR_PASSWORD ?? '',
           },
           timeout: 3000,
         }),

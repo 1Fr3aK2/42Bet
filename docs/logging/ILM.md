@@ -130,6 +130,7 @@ elasticsearch_ilm_init:
     - 42Bet
   environment:
     ELASTIC_PASSWORD: "${ELASTIC_PASSWORD}"
+    ES_MONITOR_PASSWORD: "${ES_MONITOR_PASSWORD}"
   entrypoint: ["/bin/sh"]
   command: ["/scripts/ilm-init.sh"]
   volumes:
