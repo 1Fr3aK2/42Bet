@@ -30,6 +30,7 @@ The `postgres_backup` service (`docker-compose.yml`) runs continuously and calls
   container), which is bind-mounted to `./backups/postgres` on the host — so
   backups survive container recreation and `make re`, since they live outside
   any named Docker volume.
+- `make fclean` (and therefore `make re`) deliberately leaves `./backups` untouched; delete it by hand if a clean slate is wanted.
 - Deletes any `appdb_*.sql` file older than `$RETENTION_DAYS` (defaults to 7)
   using `find -mtime +7 -delete`, after a successful dump. A failed dump removes
   its own partial output (`rm -f "$BACKUP_FILE"`) and exits non-zero, so a broken
@@ -193,7 +194,7 @@ check that expected records are present). If the application reports
 
 ## 3. Scenario: total loss of Docker volumes
 
-A full `docker system prune` (as `make re` performs) removes every named
+A full `make re` (its `fclean` step runs `docker compose down -v --rmi all --remove-orphans`)removes every named
 volume — including `postgres-data`, `redis-data`, `elasticsearch-data`,
 `vault-data`, `vault-keys`, `vault-approle`, `grafana-db`, and
 `prometheus-data`. Each has a different recovery story:
@@ -270,7 +271,7 @@ keys are gone, the secrets are gone.
   becomes permanently sealed and undecryptable, even though the encrypted data
   in `vault-data` still physically exists.
 - If both `vault-data` and `vault-keys` are lost together — which is exactly
-  what happens on a `make re`, since `docker system prune` removes all volumes
+  what happens on a `make re`, since `docker compose down -v` removes all volumes
   at once — Vault is reinitialized from scratch by `vault_init` on the next
   boot. This is not a recovery; it is starting over. `vault-init.sh` reads the
   current `.env` values (`JWT_SECRET`, `ADMIN_PASSWORD`, `ADMIN_API_KEY`, etc.)
