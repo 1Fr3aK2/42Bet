@@ -6,13 +6,17 @@ import {
   USERNAME_MESSAGE,
   USERNAME_PATTERN,
 } from './user-rules';
+import { Transform } from 'class-transformer';
 
 export class CreateUserDto {
   @IsString()
   @MaxLength(18)
   @Matches(USERNAME_PATTERN, { message: USERNAME_MESSAGE })
   username: string;
-
+  
+  @Transform(({ value }) =>
+	typeof value === 'string' ? value.toLowerCase() : value
+  )
   @IsEmail()
   @MaxLength(40)
   email: string;
