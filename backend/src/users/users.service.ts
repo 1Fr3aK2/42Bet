@@ -215,11 +215,12 @@ export class UsersService {
           throw new NotFoundException('User not found');
         }
 
-        // Posts, comments, reports and moderation logs keep a reference to the
-        // user (no onDelete rule in schema.prisma): the database refuses.
+        // The user's posts, comments, reports and moderation logs are deleted with
+        // them (onDelete: Cascade in schema.prisma). This only happens if some
+        // other table still points at the user and has no such rule.
         if (error.code === 'P2003') {
           throw new ConflictException(
-            'This user still has posts, comments or reports linked to the account',
+            'This user is still referenced by other data and cannot be deleted',
           );
         }
       }

@@ -54,7 +54,7 @@ export default function AdminUsersPage({ token, currentUser, onClose }) {
     } catch (err) {
       setError(
         err.status >= 500
-          ? 'The user could not be deleted. They may still have posts, comments or reports linked to their account.'
+          ? 'The user could not be deleted. Please try again.'
           : err.message
       );
     } finally {
@@ -161,7 +161,7 @@ export default function AdminUsersPage({ token, currentUser, onClose }) {
                   {u.role !== 'ADMIN' && u.id !== currentUser?.id && (
                     confirmId === u.id ? (
                       <span className="user-confirm">
-                        <span>Delete {u.username}?</span>
+                        <span>Delete {u.username} and all their posts and comments?</span>
                         <button
                           className="mod-btn mod-btn--danger"
                           disabled={busyId === u.id}
