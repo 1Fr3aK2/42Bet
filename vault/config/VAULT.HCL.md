@@ -133,7 +133,8 @@ idempotent and does, in order:
 3. **Enable the KV v2 engine** at `secret/` (automatic in dev mode, explicit
    outside it).
 4. **Store the secrets** (Postgres, Redis, admin API key, admin account, JWT
-   secret) from environment variables passed to `vault_init`.
+   secret, Elasticsearch monitoring user) from environment variables passed to
+   `vault_init`.
 5. **Load the policy** (`backend-policy`) and **enable AppRole**.
 6. **Create `backend-role`** with `token_ttl=1h`, `token_max_ttl=4h` and
    `secret_id_ttl=0` (no expiry — see Known limitations for the rationale).

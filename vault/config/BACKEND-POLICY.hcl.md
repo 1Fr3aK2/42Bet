@@ -2,8 +2,7 @@
 
 ## What it does
 
-Defines an ACL policy in Vault that grants read-only access to exactly five
-secret paths — Postgres, Redis, the Admin Public API key, the seeded admin
+Defines an ACL policy in Vault that grants read-only access to exactly six secret paths — Postgres, Redis, the Admin Public API key, the seeded admin
 account's credentials, and the JWT signing secret — and nothing else.
 
 ```hcl
@@ -26,6 +25,10 @@ path "secret/data/admin-account" {
 path "secret/data/jwt" {
   capabilities = ["read"]
 }
+
+path "secret/data/elasticsearch-monitor" {
+  capabilities = ["read"]
+}
 ```
 
 > **Note on this revision:** this document previously described only the
@@ -43,7 +46,7 @@ would either need a much broader (and riskier) token, or no way to read its
 own secrets from Vault at all.
 
 This policy follows the principle of least privilege: the backend can only
-**read** these five specific paths. It cannot list other secrets, write or
+**read** these six specific paths. It cannot list other secrets, write or
 delete anything, or access any secret outside this list — even if new
 secrets are added to Vault later for other services, this policy doesn't
 grant access to them unless explicitly extended.
@@ -55,6 +58,7 @@ grant access to them unless explicitly extended.
 | `secret/data/admin-api` | `ADMIN_API_KEY` (Admin Public API auth) | `backend` |
 | `secret/data/admin-account` | `ADMIN_USERNAME`/`ADMIN_EMAIL`/`ADMIN_PASSWORD` | `backend_seed` (creates the admin account on first run) |
 | `secret/data/jwt` | `JWT_SECRET` (token signing) | `backend` |
+| `secret/data/elasticsearch-monitor` | `es_monitor` credentials (`username`, `password`) for the Elasticsearch health check | `backend` |
 
 > **Note (S9 hardening):** `secret/data/postgres` now holds the credentials
 > of `app_user`, a least-privilege database role provisioned idempotently by
@@ -84,7 +88,7 @@ persistence"). `backend_seed` only actually needs `secret/data/admin-account`
 in practice, but sharing one policy across both services was chosen over
 maintaining two near-identical policies, since neither service is
 externally reachable on its own and the extra read access `backend_seed`
-technically has (to the other four paths) isn't exploitable beyond what
+technically has (to the other five paths) isn't exploitable beyond what
 `backend` itself already has.
 
 ## Path structure

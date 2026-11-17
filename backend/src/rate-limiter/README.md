@@ -42,7 +42,7 @@ location /auth/ {
 - **Burst:** 5 extra requests in a burst, no delay (`nodelay`) — absorbs double-clicks/accidental refresh without penalizing the user
 - **Response when exceeded:** HTTP 503 (nginx's native behavior)
 - **`/api/` location removed:** it was misaligned with the backend (which doesn't use an `/api` prefix) and unused — cleaned up to avoid future confusion
-- **Location pattern updated:** now `/auth/` (trailing slash, matching the whole auth module) rather than `/auth/login` specifically — see `NGINX_CONFIG.md` for the current full location list
+- **Location pattern updated:** now `/auth/` (trailing slash, matching the whole auth module) rather than `/auth/login` specifically — see `nginx/template/README.md` for the current full location list
 
 **Tested with:**
 ```bash

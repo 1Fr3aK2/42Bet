@@ -138,6 +138,7 @@ bootstrap, and is never present as a plain environment variable on the
 - `ADMIN_API_KEY` (secret `admin-api`)
 - `ADMIN_USERNAME` / `ADMIN_EMAIL` / `ADMIN_PASSWORD` (secret `admin-account`)
 - `JWT_SECRET` (secret `jwt`)
+- `ELASTICSEARCH_MONITOR_USER` / `ELASTICSEARCH_MONITOR_PASSWORD` (secret `elasticsearch-monitor`: the `es_monitor` user of the health check, see Section 6)
 
 A real ordering bug was found and fixed while migrating `JWT_SECRET`:
 `JwtModule.register({ secret: process.env.JWT_SECRET })` in `auth.module.ts`
@@ -161,7 +162,7 @@ running with a known, guessable signing key.
 Full detail: `docs/security/AUTH_HARDENING_REPORT.md`.
 
 **A further hardening pass** on `vault-init.sh` removed the root token from
-day-to-day operation entirely: once the five secrets, the policy, and the
+day-to-day operation entirely: once the six secrets, the policy, and the
 AppRole are provisioned, the script now revokes the root token it used to
 do so. An idempotent bootstrap-check (comparing whether the saved root
 token is still valid against whether the AppRole credentials already exist)
@@ -314,11 +315,25 @@ Elasticsearch. Following the principle of least privilege, Logstash does not run
 the `elastic` superuser; instead, it authenticates as a dedicated `logstash_writer`
 user with a restricted role (`logstash_writer_role` granting only index creation and
 write permissions on `42bet-logs-*` and `waf-audit-*`), provisioned automatically
-during startup by `ilm-init.sh`. Kibana — which, unlike
+during startup by `ilm-init.sh`. Known limitation: `logstash_writer` is created
+with the same password as `elastic` (`ELASTIC_PASSWORD`), and the `logstash`
+container receives that variable, so the restricted role limits what the
+account can do but does not protect against a compromise of the Logstash
+container; a separate password is a future improvement. Kibana — which, unlike
 Logstash, refuses to authenticate as `elastic` and requires a dedicated
 service account — authenticates as `kibana_system`, with its password set by
 a one-shot `kibana_user_init` service. Kibana is reachable only via nginx at
 `/kibana/`, itself behind the project's TLS termination.
+The backend's health check follows the same principle. `GET /health/status`
+queries `_cluster/health` as `es_monitor`, not as `elastic`. This user is
+provisioned by `ilm-init.sh` with a role (`es_monitor_role`) that has only the
+cluster privilege `monitor` and no index privileges. Its password lives in
+`.env` like the other secrets, is written to Vault (`secret/elasticsearch-monitor`)
+by `vault_init`, and is read by the backend at bootstrap, so `ELASTIC_PASSWORD`
+is no longer part of the `backend` container's environment
+(`docker compose exec backend env | grep -i elastic` prints nothing).
+Verified on a clean `make re`: with its password, `es_monitor` gets `200` on
+`/_cluster/health` and `403` on `/_security/user`.
 
 **A real production incident during this work, and its lesson:** after moving
 `ELASTIC_PASSWORD`/`KIBANA_PASSWORD` into the `.env` file, `docker compose

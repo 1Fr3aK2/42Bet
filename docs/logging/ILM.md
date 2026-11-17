@@ -112,10 +112,10 @@ in the WAF template would have to point at a different policy.
 
 Index templates only apply automatically to indices created *after* the template
 exists. They do nothing for indices that were already created before the policy
-was set up. On top of that, this project's `make re` target performs a full
-`docker system prune` and recreates every container and volume from scratch —
-including Elasticsearch — which means any configuration applied by hand through
-`curl` disappears on the next rebuild.
+was set up. On top of that, this project's `make re` target tears down every
+container and volume and recreates them from scratch (only the `backups/`
+directory is preserved) — including Elasticsearch — which means any
+configuration applied by hand through `curl` disappears on the next rebuild.
 
 To make the ILM setup survive a full rebuild without manual intervention, it is
 implemented as a dedicated one-shot init service, following the same pattern
@@ -130,6 +130,7 @@ elasticsearch_ilm_init:
     - 42Bet
   environment:
     ELASTIC_PASSWORD: "${ELASTIC_PASSWORD}"
+    ES_MONITOR_PASSWORD: "${ES_MONITOR_PASSWORD}"
   entrypoint: ["/bin/sh"]
   command: ["/scripts/ilm-init.sh"]
   volumes:

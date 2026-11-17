@@ -29,6 +29,8 @@ The script is executed by the `elasticsearch_ilm_init` service in
   for HTTP basic auth against `http://elasticsearch:9200`. Plain HTTP is
   acceptable here: this is internal container-to-container traffic, and the
   subject only requires HTTPS for connections coming from outside the backend.
+- Also receives `ES_MONITOR_PASSWORD` and exits immediately, before touching
+  Elasticsearch, if it is not set (a check right after `set -e`).
 - `restart: on-failure`: if any critical step fails, the container is
   restarted and tries again; once it exits successfully it stays stopped.
 
@@ -73,6 +75,15 @@ A detail worth knowing:
 - ILM does not act instantly: Elasticsearch evaluates policies on a periodic
   poll (10 minutes by default), so deletions can lag slightly behind the
   configured age.
+
+## The `es_monitor` user
+
+Besides the retention setup, the script creates `es_monitor_role` (cluster
+privilege `monitor` only) and the `es_monitor` user, authenticating as
+`elastic`. The backend's health check uses this user, whose password is the
+same one `vault_init` stores in `secret/elasticsearch-monitor`. Because the
+role has no index privileges, `es_monitor` can read the cluster health but
+gets `403` on security endpoints such as `/_security/user`.
 
 ## How to verify it works
 

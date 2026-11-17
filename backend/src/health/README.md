@@ -68,13 +68,14 @@ marcados como `"down"`.
 ### Descrição
 
 Endpoint pensado para consumo **externo** — é o que está exposto
-publicamente através do nginx em `/health` (ver `NGINX_CONFIG.md`), e o que
+publicamente através do nginx em `/health` (ver `nginx/template/README.md`), e o que
 a status page pública (`/status`) consulta a cada 10 segundos para mostrar o
 estado do sistema.
 
 Verifica os mesmos três componentes do `/health`, **mais o Elasticsearch**
-(via `_cluster/health`, autenticado com as credenciais do utilizador
-`elastic`).
+(via `_cluster/health`, autenticado com o utilizador de monitorização
+`es_monitor`, que só tem o privilégio de cluster `monitor`, com as
+credenciais vindas do Vault).
 
 Ao contrário do `/health`, **devolve sempre `200`** — mesmo com componentes
 em baixo — porque o próprio propósito deste endpoint é reportar o estado,
@@ -134,4 +135,4 @@ Cada um responde a uma pergunta diferente:
 
 Detalhe de implementação, bugs encontrados, e a exposição pública completa
 (nginx + status page + rate limiting dedicado) estão documentados em
-`SECURITY_REPORT.md` §7 e `NGINX_CONFIG.md` — não duplicados aqui.
+`SECURITY_REPORT.md` §7 e `nginx/template/README.md` — não duplicados aqui.
