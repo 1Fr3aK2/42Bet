@@ -93,10 +93,16 @@ correctly. All other events skip the filter block entirely.
 Two Elasticsearch outputs chosen by a conditional: WAF audit events go to
 `waf-audit-%{+YYYY.MM.dd}`, everything else to
 `42bet-logs-%{+YYYY.MM.dd}`. 
-Both authenticate using the dedicated least-privilege user `logstash_writer` 
+Both authenticate using the dedicated user `logstash_writer`
 (provisioned by `elasticsearch_ilm_init`) with `manage_template => false` so 
 that index lifecycle management (ILM) and templates are managed exclusively 
 by cluster policies. The date in the index name creates **one index per day**.
+
+Known limitation: `logstash_writer` has a restricted role, but it is created
+with the same password as `elastic` (`ELASTIC_PASSWORD`), and the `logstash`
+container receives that variable, so the role does not protect against a
+compromise of the Logstash container; a separate password is a future
+improvement.
 ## Fields reference
 
 | Field               | Type    | Meaning                                                        |

@@ -315,7 +315,11 @@ Elasticsearch. Following the principle of least privilege, Logstash does not run
 the `elastic` superuser; instead, it authenticates as a dedicated `logstash_writer`
 user with a restricted role (`logstash_writer_role` granting only index creation and
 write permissions on `42bet-logs-*` and `waf-audit-*`), provisioned automatically
-during startup by `ilm-init.sh`. Kibana — which, unlike
+during startup by `ilm-init.sh`. Known limitation: `logstash_writer` is created
+with the same password as `elastic` (`ELASTIC_PASSWORD`), and the `logstash`
+container receives that variable, so the restricted role limits what the
+account can do but does not protect against a compromise of the Logstash
+container; a separate password is a future improvement. Kibana — which, unlike
 Logstash, refuses to authenticate as `elastic` and requires a dedicated
 service account — authenticates as `kibana_system`, with its password set by
 a one-shot `kibana_user_init` service. Kibana is reachable only via nginx at
