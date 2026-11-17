@@ -185,21 +185,48 @@ export class UsersService {
 	  throw error;
 	}
   }
-  async deleteUser(userId: number) {
-    try {
-        await this.prisma.user.delete({
-            where: { id: userId },
-        });
+  async deleteUser(userId: number, requesterId: number) {
+    if (userId === requesterId) {
+      throw new BadRequestException('You cannot delete your own account');
+    }
 
-        return { message: 'User deleted successfully' };
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { role: true },
+    });
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    if (user.role === Role.ADMIN) {
+      throw new BadRequestException('Admin accounts cannot be deleted');
+    }
+
+    try {
+      await this.prisma.user.delete({
+        where: { id: userId },
+      });
+
+      return { message: 'User deleted successfully' };
     } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError) {
         if (error.code === 'P2025') {
-            throw new NotFoundException('User not found');
+          throw new NotFoundException('User not found');
         }
 
-        throw error;
+        // Posts, comments, reports and moderation logs keep a reference to the
+        // user (no onDelete rule in schema.prisma): the database refuses.
+        if (error.code === 'P2003') {
+          throw new ConflictException(
+            'This user still has posts, comments or reports linked to the account',
+          );
+        }
+      }
+
+      throw error;
     }
-}
+  }
   async updatePassword(
 	userId: number,
 	updatePasswordDto: UpdatePasswordDto,

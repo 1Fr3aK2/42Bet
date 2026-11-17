@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
-import { getUsers, updateUserRole } from '../api/users';
+import { getUsers, updateUserRole, deleteUser } from '../api/users';
 
 const ROLE_ORDER = { ADMIN: 0, MODERATOR: 1, USER: 2 };
 
-// Admin only: list every user and promote/demote moderators.
+// Admin only: list every user, promote/demote moderators and delete accounts.
 export default function AdminUsersPage({ token, currentUser, onClose }) {
   const [users, setUsers] = useState([]);
   const [search, setSearch] = useState('');
@@ -11,6 +11,8 @@ export default function AdminUsersPage({ token, currentUser, onClose }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [busyId, setBusyId] = useState(null);
+  const [confirmId, setConfirmId] = useState(null); // user whose "Delete" is waiting for a yes/no
+  const [notice, setNotice] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -38,6 +40,26 @@ export default function AdminUsersPage({ token, currentUser, onClose }) {
       setError(err.message);
     } finally {
       setBusyId(null);
+    }
+  }
+
+  async function handleDelete(user) {
+    setBusyId(user.id);
+    setError('');
+    setNotice('');
+    try {
+      await deleteUser(token, user.id);
+      setUsers((us) => us.filter((u) => u.id !== user.id));
+      setNotice(`${user.username} was deleted.`);
+    } catch (err) {
+      setError(
+        err.status >= 500
+          ? 'The user could not be deleted. They may still have posts, comments or reports linked to their account.'
+          : err.message
+      );
+    } finally {
+      setBusyId(null);
+      setConfirmId(null);
     }
   }
 
@@ -88,6 +110,7 @@ export default function AdminUsersPage({ token, currentUser, onClose }) {
         </div>
 
         {error && <div className="modal-error">{error}</div>}
+        {notice && <div className="users-notice">{notice}</div>}
 
         {loading ? (
           <div className="forum-empty">Loading...</div>
@@ -132,6 +155,37 @@ export default function AdminUsersPage({ token, currentUser, onClose }) {
                     >
                       Remove moderator
                     </button>
+                  )}
+
+                  {/* Admins and your own account cannot be deleted from here */}
+                  {u.role !== 'ADMIN' && u.id !== currentUser?.id && (
+                    confirmId === u.id ? (
+                      <span className="user-confirm">
+                        <span>Delete {u.username}?</span>
+                        <button
+                          className="mod-btn mod-btn--danger"
+                          disabled={busyId === u.id}
+                          onClick={() => handleDelete(u)}
+                        >
+                          Yes, delete
+                        </button>
+                        <button
+                          className="mod-btn"
+                          disabled={busyId === u.id}
+                          onClick={() => setConfirmId(null)}
+                        >
+                          Cancel
+                        </button>
+                      </span>
+                    ) : (
+                      <button
+                        className="mod-btn mod-btn--danger"
+                        disabled={busyId === u.id}
+                        onClick={() => setConfirmId(u.id)}
+                      >
+                        Delete
+                      </button>
+                    )
                   )}
                 </div>
               ))}

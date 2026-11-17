@@ -85,7 +85,7 @@ import {
 	@UseGuards(JwtAuthGuard, RolesGuard)
     @Roles(Role.ADMIN)
     @Delete(':id')
-    deleteUser(@Param('id', ParseIntPipe) id: number) {
-        return this.usersService.deleteUser(id);
+    deleteUser(@Param('id', ParseIntPipe) id: number, @Request() req) {
+        return this.usersService.deleteUser(id, req.user.id);
     }
 }

@@ -141,3 +141,20 @@ export async function updateUserRole(token, id, role) {
 
   return response.json();
 }
+
+// DELETE /users/:id -> removes an account (admin only). The error carries the
+// HTTP status, so the page can tell a refusal (4xx) from a server problem (5xx).
+export async function deleteUser(token, id) {
+  const response = await fetch(`${API_URL}/users/${id}`, {
+    method: 'DELETE',
+    headers: authHeaders(token),
+  });
+
+  if (!response.ok) {
+    const error = await buildError(response, 'Could not delete the user');
+    error.status = response.status;
+    throw error;
+  }
+
+  return response.json();
+}
