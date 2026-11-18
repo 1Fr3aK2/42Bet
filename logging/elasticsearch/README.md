@@ -29,6 +29,8 @@ The script is executed by the `elasticsearch_ilm_init` service in
   for HTTP basic auth against `http://elasticsearch:9200`. Plain HTTP is
   acceptable here: this is internal container-to-container traffic, and the
   subject only requires HTTPS for connections coming from outside the backend.
+- Also receives `ES_MONITOR_PASSWORD` and exits immediately, before touching
+  Elasticsearch, if it is not set (a check right after `set -e`).
 - `restart: on-failure`: if any critical step fails, the container is
   restarted and tries again; once it exits successfully it stays stopped.
 
@@ -41,12 +43,12 @@ the same content, so running it again (for example on every
 1. **Wait for Elasticsearch.** Polls the cluster health endpoint every 2
    seconds until it answers. This is a second safety net on top of the
    compose-level healthcheck.
-2. **Create the ILM policy** `transcendence-logs-policy`.
-3. **Create an index template** for `transcendence-logs-*` that points new
+2. **Create the ILM policy** `42bet-logs-policy`.
+3. **Create an index template** for `42bet-logs-*` that points new
    indices at that policy.
 4. **Create an index template** for `waf-audit-*` (the ModSecurity audit log,
    read by Filebeat from the shared volume) pointing at the same policy.
-5. **Apply the policy retroactively** to any existing `transcendence-logs-*`
+5. **Apply the policy retroactively** to any existing `42bet-logs-*`
    and `waf-audit-*` indices.
 
 ### Why step 5 exists
@@ -65,7 +67,7 @@ matches yet, which is the normal case on a first run.
 |--------|---------------------------------------------|---------------------------------|
 | Delete | 14 days after index creation                | Delete the index                |
 
-Both log families (`transcendence-logs-*` and `waf-audit-*`) share the same
+Both log families (`42bet-logs-*` and `waf-audit-*`) share the same
 policy, so application logs and WAF audit logs have the same retention.
 
 A detail worth knowing:
@@ -74,10 +76,19 @@ A detail worth knowing:
   poll (10 minutes by default), so deletions can lag slightly behind the
   configured age.
 
+## The `es_monitor` user
+
+Besides the retention setup, the script creates `es_monitor_role` (cluster
+privilege `monitor` only) and the `es_monitor` user, authenticating as
+`elastic`. The backend's health check uses this user, whose password is the
+same one `vault_init` stores in `secret/elasticsearch-monitor`. Because the
+role has no index privileges, `es_monitor` can read the cluster health but
+gets `403` on security endpoints such as `/_security/user`.
+
 ## How to verify it works
 
 - In Kibana, open **Stack Management → Index Lifecycle Policies** and check
-  that `transcendence-logs-policy` exists, and that it lists indices as linked
+  that `42bet-logs-policy` exists, and that it lists indices as linked
   to it.
 - In **Index Management**, open a log index and check its lifecycle tab.
 - In Kibana's Dev Tools, the `_ilm/explain` API on an index shows its current

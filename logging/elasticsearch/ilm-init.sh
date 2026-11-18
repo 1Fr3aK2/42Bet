@@ -1,6 +1,8 @@
 #!/bin/sh
 set -e
 
+: "${ES_MONITOR_PASSWORD:?ES_MONITOR_PASSWORD is not set}"
+
 echo "Waiting for Elasticsearch to be ready..."
 until curl -sf -u "elastic:$ELASTIC_PASSWORD" "http://elasticsearch:9200/_cluster/health" > /dev/null; do
   sleep 2
@@ -63,7 +65,7 @@ curl -sf -u "$AUTH" -X PUT "http://elasticsearch:9200/_slm/policy/daily-snapshot
   }'
 
 echo "Creating ILM policy..."
-curl -sf -u "$AUTH" -X PUT "http://elasticsearch:9200/_ilm/policy/transcendence-logs-policy" \
+curl -sf -u "$AUTH" -X PUT "http://elasticsearch:9200/_ilm/policy/42bet-logs-policy" \
   -H "Content-Type: application/json" \
   -d '{
     "policy": {
@@ -78,14 +80,14 @@ curl -sf -u "$AUTH" -X PUT "http://elasticsearch:9200/_ilm/policy/transcendence-
     }
   }'
 
-echo "Creating index template for transcendence-logs-*..."
-curl -sf -u "$AUTH" -X PUT "http://elasticsearch:9200/_index_template/transcendence-logs-template" \
+echo "Creating index template for 42bet-logs-*..."
+curl -sf -u "$AUTH" -X PUT "http://elasticsearch:9200/_index_template/42bet-logs-template" \
   -H "Content-Type: application/json" \
   -d '{
-    "index_patterns": ["transcendence-logs-*"],
+    "index_patterns": ["42bet-logs-*"],
     "template": {
       "settings": {
-        "index.lifecycle.name": "transcendence-logs-policy",
+        "index.lifecycle.name": "42bet-logs-policy",
         "index.number_of_replicas": "0"
       }
     }
@@ -98,21 +100,21 @@ curl -sf -u "$AUTH" -X PUT "http://elasticsearch:9200/_index_template/waf-audit-
     "index_patterns": ["waf-audit-*"],
     "template": {
       "settings": {
-        "index.lifecycle.name": "transcendence-logs-policy",
+        "index.lifecycle.name": "42bet-logs-policy",
         "index.number_of_replicas": "0"
       }
     }
   }'
 
-echo "Applying policy to existing transcendence-logs-* indices..."
-curl -sf -u "$AUTH" -X PUT "http://elasticsearch:9200/transcendence-logs-*/_settings?ignore_unavailable=true" \
+echo "Applying policy to existing 42bet-logs-* indices..."
+curl -sf -u "$AUTH" -X PUT "http://elasticsearch:9200/42bet-logs-*/_settings?ignore_unavailable=true" \
   -H "Content-Type: application/json" \
-  -d '{"index.lifecycle.name": "transcendence-logs-policy"}' || true
+  -d '{"index.lifecycle.name": "42bet-logs-policy"}' || true
 
 echo "Applying policy to existing waf-audit-* indices..."
 curl -sf -u "$AUTH" -X PUT "http://elasticsearch:9200/waf-audit-*/_settings?ignore_unavailable=true" \
   -H "Content-Type: application/json" \
-  -d '{"index.lifecycle.name": "transcendence-logs-policy"}' || true
+  -d '{"index.lifecycle.name": "42bet-logs-policy"}' || true
 
 # Criar papel restrito permanente para o Logstash
 echo "Creating permanent logstash_writer role..."
@@ -122,7 +124,7 @@ curl -sf -u "elastic:$ELASTIC_PASSWORD" -X POST "http://elasticsearch:9200/_secu
     "cluster": ["monitor", "manage_index_templates"],
     "indices": [
       {
-        "names": ["transcendence-logs-*", "waf-audit-*"],
+        "names": ["42bet-logs-*", "waf-audit-*"],
         "privileges": ["create_index", "create", "write", "auto_configure", "view_index_metadata"]
       }
     ]
@@ -135,6 +137,23 @@ curl -sf -u "elastic:$ELASTIC_PASSWORD" -X POST "http://elasticsearch:9200/_secu
   -d '{
     "password": "'"$ELASTIC_PASSWORD"'",
     "roles": ["logstash_writer_role"]
+  }'
+
+# Criar papel de monitorização para o health check do backend (só privilégio de cluster "monitor")
+echo "Creating es_monitor_role role..."
+curl -sf -u "elastic:$ELASTIC_PASSWORD" -X POST "http://elasticsearch:9200/_security/role/es_monitor_role" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "cluster": ["monitor"]
+  }'
+
+# Criar utilizador de monitorização (a password é a mesma que o Vault guarda em secret/elasticsearch-monitor)
+echo "Creating es_monitor user..."
+curl -sf -u "elastic:$ELASTIC_PASSWORD" -X POST "http://elasticsearch:9200/_security/user/es_monitor" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "password": "'"$ES_MONITOR_PASSWORD"'",
+    "roles": ["es_monitor_role"]
   }'
 
 echo "Cleaning up ilm_admin user..."

@@ -41,7 +41,7 @@ export default function LegalFooter() {
   return (
     <>
       <footer className="legal-footer">
-        <span>© 2026 Transcendence · a 42 Lisboa student project</span>
+        <span>© 2026 42Bet · a 42 Lisboa student project</span>
         <nav aria-label="Legal">
           <a href="#/privacy">Privacy Policy</a>
           <a href="#/terms">Terms of Service</a>

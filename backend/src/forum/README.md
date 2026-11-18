@@ -39,7 +39,7 @@ manual moderation actions, and moderation logs.
 
 Write actions on the forum are rate-limited per authenticated user, on top of
 the general IP-based limit nginx applies to all of `/forum` (30 requests/second
-per IP — see `NGINX_CONFIG.md`). The per-user limits below are what actually
+per IP — see `nginx/template/README.md`). The per-user limits below are what actually
 bounds abusive behavior from a single account, since the IP-based limit alone
 doesn't distinguish one user making many requests from several users sharing
 a network:

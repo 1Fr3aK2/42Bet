@@ -1,22 +1,22 @@
-# Cybersecurity & DevOps Report — ft_transcendence
+# Cybersecurity & DevOps Report — 42Bet
 
 ## Role & Scope
 
 This report consolidates the work delivered under the **Cybersecurity / DevOps /
-Monitoring** role for the ft_transcendence project: Docker, deployment, HTTPS,
+Monitoring** role for the 42Bet project: Docker, deployment, HTTPS,
 secrets, WAF/Vault, logs, monitoring, health checks, backups/disaster recovery,
 security testing, and technical documentation.
 
 It brings together, into a single narrative, the individual documents produced
 along the way:
-- `SECURITY_TESTING.md` — infrastructure-level security tests (Redis, Postgres, WAF, Vault)
-- `RATE_LIMITING.md` — brute-force/DoS protection design (login)
-- `RATE_LIMIT_TESTING.md` — validation of the rate limiting mechanisms
-- `NGINX_CONFIG.md` — full nginx configuration reference
-- `METRICS.md` — Prometheus metrics exposed by the backend
-- `AUTH_HARDENING_REPORT.md` — authentication/secrets hardening pass
+- `docs/security/SECURITY_TESTING.md` — infrastructure-level security tests (Redis, Postgres, WAF, Vault)
+- `backend/src/rate-limiter/README.md` — brute-force/DoS protection design (login)
+- `docs/security/RATE_LIMIT_TESTING.md` — validation of the rate limiting mechanisms
+- `nginx/template/README.md` — full nginx configuration reference
+- `backend/src/metrics/README.md` — Prometheus metrics exposed by the backend
+- `docs/security/AUTH_HARDENING_REPORT.md` — authentication/secrets hardening pass
 - `docs/logging/ILM.md` — Elasticsearch index lifecycle management
-- `docs/DISASTER_RECOVERY.md` — backup restore and disaster recovery procedures
+- `docs/backup-scripts/Disaster-Recovery.md` — backup restore and disaster recovery procedures
 
 Each linked document has the full technical detail; this report gives the
 overall picture, the reasoning behind key decisions, and an honest account of
@@ -43,15 +43,19 @@ The stack runs entirely on Docker Compose, started with a single command:
   password authentication.
 - **Postgres** — primary database (via Prisma), with automated daily backups.
 - **Prometheus + Grafana + exporters** (nginx, redis, postgres) — metrics,
-  custom dashboards, and alerting rules, exposed via nginx subpaths with
-  authentication.
+  custom dashboards, and alerting rules. Grafana is exposed through an nginx
+  subpath behind its own login; Prometheus is deliberately not published
+  (`/prometheus` returns `404`) and is only queried by Grafana over the Docker
+  network.
 - **Elasticsearch + Logstash + Kibana + Filebeat** (ELK) — centralized log
   aggregation, including structured parsing of the WAF audit log, secured
-  access, and index lifecycle management. See Section 6.
+  access, index lifecycle management and daily snapshots. See Section 6.
 - **backend / frontend / backend_migrate / backend_seed** — the application
   itself, plus dedicated one-shot services for running migrations and seeding
   the admin account, both gated with `condition: service_completed_successfully`
-  so the backend never starts against an inconsistent database.
+  so the backend never starts against an inconsistent database. A further
+  one-shot service, `postgres_app_user_init`, provisions the backend's
+  least-privilege database role before `backend_migrate` runs.
 - **postgres_backup** — automated daily `pg_dump`, 7-day retention.
 
 Certificates are generated locally via `mkcert` with an automatic, native `openssl` fallback featuring Subject Alternative Name (SAN) extensions, completely eliminating any dependency on `sudo`. All inter-service traffic inside the Docker network is unencrypted by design (permitted by the project subject); every path reachable from a browser goes through nginx over HTTPS.
@@ -61,7 +65,7 @@ Certificates are generated locally via `mkcert` with an automatic, native `opens
 ## 2. Security Testing (Infrastructure)
 
 Manual tests were run against the core infrastructure services to validate
-common attack vectors. Full detail in `SECURITY_TESTING.md`.
+common attack vectors. Full detail in `docs/security/SECURITY_TESTING.md`.
 
 | Vector | Result |
 |---|---|
@@ -73,14 +77,35 @@ common attack vectors. Full detail in `SECURITY_TESTING.md`.
 | Path Traversal | ✅ Blocked (404, path normalized) |
 | Command Injection (WAF) | ✅ Blocked (403) |
 | Vault access without token | ✅ Rejected (permission denied) |
+| Postgres superuser used by the application (S9) | ✅ Resolved — `app_user`, a least-privilege role, replaces `POSTGRES_USER` for all backend runtime connections |
 
 **Gaps noted in the original pass — status updated:**
 - ~~Vault dev mode (in-memory, no real seal)~~ — **resolved**, see Section 3.
 - ~~Vault root token used directly, not scoped~~ — **resolved.**
-  `vault_init.sh` now revokes the root token automatically once bootstrap
+  `vault-init.sh` now revokes the root token automatically once bootstrap
   (secrets, policy, AppRole) completes; the backend only ever authenticates
   with a scoped AppRole token afterwards. See Section 3 and
-  `VAULT_PRODUCTION.md`, "Idempotent bootstrap and root token revocation".
+  `vault/VAULT_PROD_MODE.md`, "Idempotent bootstrap and root token revocation".
+- ~~Backend connects to Postgres as the superuser (S9)~~ — **resolved.** A
+  one-shot `postgres_app_user_init` service runs
+  `postgres/init/ensure-app-user.sh` on every `docker compose up`, creating
+  (or, on later runs, updating the password of) `app_user`, which has only
+  `SELECT`/`INSERT`/`UPDATE`/`DELETE` — no `CREATE`, no `CREATEROLE`, no
+  external-program `COPY`. Idempotent and safe against already-populated
+  databases: it grants access to existing tables directly, and to future ones
+  via `ALTER DEFAULT PRIVILEGES`, so the database side needs no `make re` on
+  an environment that predates this change; the backend switches to
+  `app_user` once `secret/postgres` is updated in Vault (see
+  `vault/VAULT_PROD_MODE.md`). The backend's `secret/postgres` Vault entry now
+  holds `app_user`'s credentials, not the superuser's. `backend_migrate`
+  still connects as `POSTGRES_USER` (needs DDL for migrations), and now also
+  depends on `postgres_app_user_init` completing first. Verified:
+  `CREATE TABLE`, `CREATE ROLE` and `COPY ... TO PROGRAM` all return
+  `permission denied` as `app_user`, reads on application tables work, and
+  `pg_stat_activity` shows the backend connecting as `app_user`. With the backend
+  running as `app_user`, `test-bets.sh` (54/54) and `test-users.sh` (19/19) pass,
+  and `test-security.sh` reports 24 OK; its only remaining failure is S6 (avatar
+  content check, owned by Miguel). S3a (forum search length) was resolved by Hugo.
 - Exposed Redis/Postgres ports and self-signed certificates remain accepted
   trade-offs for this project's scope (not production deployment);
   documented rather than silently ignored.
@@ -91,7 +116,7 @@ common attack vectors. Full detail in `SECURITY_TESTING.md`.
 
 Vault moved from dev mode to a properly initialized instance:
 
-- `vault_init.sh` now runs `vault operator init -key-shares=5 -key-threshold=3`,
+- `vault-init.sh` now runs `vault operator init -key-shares=5 -key-threshold=3`,
   persists the result to `/vault/keys/init.json` (backed by the `vault-keys`
   volume), and unseals using 3 of the 5 generated key shares — rather than the
   single-command, no-persistence dev-mode startup used previously.
@@ -113,6 +138,7 @@ bootstrap, and is never present as a plain environment variable on the
 - `ADMIN_API_KEY` (secret `admin-api`)
 - `ADMIN_USERNAME` / `ADMIN_EMAIL` / `ADMIN_PASSWORD` (secret `admin-account`)
 - `JWT_SECRET` (secret `jwt`)
+- `ELASTICSEARCH_MONITOR_USER` / `ELASTICSEARCH_MONITOR_PASSWORD` (secret `elasticsearch-monitor`: the `es_monitor` user of the health check, see Section 6)
 
 A real ordering bug was found and fixed while migrating `JWT_SECRET`:
 `JwtModule.register({ secret: process.env.JWT_SECRET })` in `auth.module.ts`
@@ -133,10 +159,10 @@ environment variable was ever missing. The fallback was removed; `jwt.strategy.t
 now fails fast (throws at startup) if `JWT_SECRET` is not set, rather than
 running with a known, guessable signing key.
 
-Full detail: `AUTH_HARDENING_REPORT.md`.
+Full detail: `docs/security/AUTH_HARDENING_REPORT.md`.
 
 **A further hardening pass** on `vault-init.sh` removed the root token from
-day-to-day operation entirely: once the five secrets, the policy, and the
+day-to-day operation entirely: once the six secrets, the policy, and the
 AppRole are provisioned, the script now revokes the root token it used to
 do so. An idempotent bootstrap-check (comparing whether the saved root
 token is still valid against whether the AppRole credentials already exist)
@@ -147,22 +173,25 @@ re-provision anything with a token that's already gone. The AppRole's
 removing a previously-documented limitation around long-running backend
 instances. Full detail, including the correct way to update a Vault secret
 now that the root token isn't available by default
-(`vault operator generate-root -init`, using the still-valid unseal key
-shares): `VAULT_PRODUCTION.md`.
+(`vault operator generate-root`, using the still-valid unseal key shares;
+on Vault 2.x this also requires a temporary `enable_unauthenticated_access`
+setting, since the endpoint now needs a token): `vault/VAULT_PROD_MODE.md`.
 
 ---
 
 ## 4. Rate Limiting & Brute-Force Protection
 
 Implemented in two complementary layers on `/auth/login` (full detail in
-`RATE_LIMITING.md` and `RATE_LIMIT_TESTING.md`):
+`backend/src/rate-limiter/README.md` and `docs/security/RATE_LIMIT_TESTING.md`):
 
 - **By IP (nginx)** — `10r/m`, burst 5. Protects against a single attacker
   hammering the endpoint; doesn't protect against a distributed attack (many
   IPs, one attempt each against the same account).
 - **By account (backend + Redis)** — a custom, reusable `RateLimiterService`
   in NestJS, using Redis `INCR`+`EXPIRE` for atomic, self-expiring counters.
-  5 failed attempts / 30-minute window per account, reset on successful login.
+  5 failed attempts / 30-minute window per account, reset on successful login
+  (verified end-to-end by `scripts/test-rate-limit-reset.sh`: three failed attempts
+  leave the Redis counter at `3`, a correct login deletes the key).
 
 **A real bug was found and fixed after the original report:** the per-account
 limiter used a single fixed Redis key (`login_attempts:`) for *every* user,
@@ -183,7 +212,7 @@ when the account exists, and `login_attempts:unknown:<sha256 of the lowercased t
 when it does not, so unknown identifiers are still counted without storing the
 typed text, which may be an email, in Redis in clear. Re-tested: the `S1` test
 passes, `test-users.sh` passes (19/19), and Redis shows one key per account. See
-`RATE_LIMITING.md` ("Per-account key") and `RATE_LIMIT_TESTING.md` (Tests 14 and 15).
+`backend/src/rate-limiter/README.md` ("Per-account key") and `docs/security/RATE_LIMIT_TESTING.md` (Tests 14 and 15).
 
 **Forum rate limiting, previously blocked, is now implemented.** The gap noted
 in the original report (`createPost`/`createComment`/`createReport` had no
@@ -211,7 +240,7 @@ backend (bypassing nginx): exactly 100 successes followed by `429` from the
 
 ## 5. nginx Configuration & Security Headers
 
-Full reference in `NGINX_CONFIG.md`. Highlights:
+Full reference in `nginx/template/README.md`. Highlights:
 
 - **Per-module routing** — dedicated `location` blocks matching the backend's
   actual route prefixes: `/auth/login`, `/forum`, `/api/admin` (Admin Public
@@ -222,21 +251,35 @@ Full reference in `NGINX_CONFIG.md`. Highlights:
 - **Security headers**, applied to all HTTPS responses: `Strict-Transport-Security`,
   `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`,
   `Referrer-Policy: strict-origin-when-cross-origin`,
-  `Content-Security-Policy`. Verified via `curl -I`.
+  `Content-Security-Policy`. Verified via `curl -I`. As a preventive measure,
+  the `X-Powered-By` header that upstream frameworks may add is stripped
+  (`proxy_hide_header X-Powered-By;`), alongside `server_tokens off`, so the
+  backend stack is not disclosed. None of the current upstreams sends it, so the
+  directive guards against a future framework change rather than fixing a leak.
+- **HTTP/2** is enabled on the HTTPS server block (`http2 on;`), negotiated via
+  ALPN; clients without HTTP/2 fall back to HTTP/1.1.
 - **WebSocket support** (`/socket.io/`, added by the frontend teammate for
-  real-time crypto price data) required a scoped ModSecurity exclusion
-  (`SecRuleRemoveById 920420`) rather than disabling the WAF for that location
-  entirely — the WAF stays active (`modsecurity on;`) inside the location, only
-  the one rule causing false positives on WebSocket upgrade requests is
-  removed, scoped to that location only.
-- **A second scoped WAF exclusion** was added for `/kibana/`
-  (`SecRuleRemoveById 942340`): Kibana's search UI legitimately sends
-  wildcard-containing queries to `/kibana/api/content_management/rpc/search`,
-  which the SQLi rule 942340 flagged as an attack, adding to the inbound
-  anomaly score and causing legitimate searches to be blocked with 403. Same
-  scoped-exclusion pattern as the WebSocket fix — the rule is removed only for
-  this one location, the rest of the WAF's SQLi protection is untouched
-  elsewhere.
+  real-time crypto price data) required a scoped ModSecurity exclusion for rule
+  `920420`, implemented as runtime rule `1000013` in `before-crs.conf`
+  (`@rx ^/+socket\.io(/|\?|$)`) rather than disabling the WAF for that location
+  entirely — the WAF stays active (`modsecurity on;` is inherited from the
+  `server` block), and only the one rule causing false positives on Socket.IO
+  polling and WebSocket upgrade requests is removed, only for that path.
+  It started as an inline `SecRuleRemoveById 920420` in the `location` block and
+  was migrated so that every WAF exclusion lives in one versioned file.
+- **A second scoped WAF exclusion** was added for `/kibana`: Kibana's search UI
+  legitimately sends wildcard-containing queries to
+  `/kibana/api/content_management/rpc/search`, which the SQLi rule `942340`
+  flagged as an attack, adding to the inbound anomaly score and causing
+  legitimate searches to be blocked with 403. Same scoped-exclusion pattern as
+  the WebSocket fix — the rule is removed only for this path, the rest of the
+  WAF's SQLi protection is untouched elsewhere. The same exclusion later grew to
+  cover four more Kibana false positives (`932236`, `932240`, `942220`,
+  `934190`); all five now live in runtime rule `1000012` in `before-crs.conf`.
+  The reasoning for each rule is in `nginx/modsecurity/WAF_HARDENING.md`.
+  A narrower rule, `1000014`, removes only the `attack-sqli` group from the
+  `Referer` header under `/kibana`, because Kibana keeps its page state in the
+  URL and the browser sends it back as `Referer` on every request.
 - **Rate-limited zones per module**: `login` (10r/m), `forum` (30r/s),
   `admin_api` (30r/s), and — added in this phase — `health` (10r/s, burst 20,
   `nodelay`).
@@ -254,7 +297,7 @@ retention/archiving policies** and **secure access to all components**.
 with explicit `hints.default_config` — Docker labels alone were not enough to
 trigger collection for containers without `co.elastic.logs/*` labels), shipped
 to Logstash, and indexed into Elasticsearch as
-`transcendence-logs-YYYY.MM.dd`. Filebeat is built from a small custom
+`42bet-logs-YYYY.MM.dd`. Filebeat is built from a small custom
 Dockerfile (`COPY --chown=root:root filebeat.yml`) rather than bind-mounted,
 after repeated friction with the file's required root ownership on every edit.
 
@@ -271,12 +314,26 @@ handled the inbound case).
 Elasticsearch. Following the principle of least privilege, Logstash does not run as
 the `elastic` superuser; instead, it authenticates as a dedicated `logstash_writer`
 user with a restricted role (`logstash_writer_role` granting only index creation and
-write permissions on `transcendence-logs-*` and `waf-audit-*`), provisioned automatically
-during startup by `ilm-init.sh`. Kibana — which, unlike
+write permissions on `42bet-logs-*` and `waf-audit-*`), provisioned automatically
+during startup by `ilm-init.sh`. Known limitation: `logstash_writer` is created
+with the same password as `elastic` (`ELASTIC_PASSWORD`), and the `logstash`
+container receives that variable, so the restricted role limits what the
+account can do but does not protect against a compromise of the Logstash
+container; a separate password is a future improvement. Kibana — which, unlike
 Logstash, refuses to authenticate as `elastic` and requires a dedicated
 service account — authenticates as `kibana_system`, with its password set by
 a one-shot `kibana_user_init` service. Kibana is reachable only via nginx at
 `/kibana/`, itself behind the project's TLS termination.
+The backend's health check follows the same principle. `GET /health/status`
+queries `_cluster/health` as `es_monitor`, not as `elastic`. This user is
+provisioned by `ilm-init.sh` with a role (`es_monitor_role`) that has only the
+cluster privilege `monitor` and no index privileges. Its password lives in
+`.env` like the other secrets, is written to Vault (`secret/elasticsearch-monitor`)
+by `vault_init`, and is read by the backend at bootstrap, so `ELASTIC_PASSWORD`
+is no longer part of the `backend` container's environment
+(`docker compose exec backend env | grep -i elastic` prints nothing).
+Verified on a clean `make re`: with its password, `es_monitor` gets `200` on
+`/_cluster/health` and `403` on `/_security/user`.
 
 **A real production incident during this work, and its lesson:** after moving
 `ELASTIC_PASSWORD`/`KIBANA_PASSWORD` into the `.env` file, `docker compose
@@ -299,7 +356,7 @@ from the configured parts (`AIJDEFHZ`), removing header capture from the
 audit log entirely rather than attempting to redact individual header values.
 
 **Index Lifecycle Management (ILM)** — the retention/archiving requirement.
-A policy (`transcendence-logs-policy`: `hot` phase with daily/5GB rollover,
+A policy (`42bet-logs-policy`: `hot` phase with daily/5GB rollover,
 `delete` phase at 14 days) is applied automatically to both index families via
 two index templates. Since `make re` recreates Elasticsearch from scratch, the
 policy and templates are (re-)applied on every stack startup by a dedicated
@@ -308,6 +365,15 @@ test, that the index of the day is already `"managed": true` immediately after
 a full rebuild with no manual step. Full detail, including a real
 `ignore_unavailable` bug found and fixed during implementation, in
 `docs/logging/ILM.md`.
+
+**Snapshots (backup of the log data).** The same `elasticsearch_ilm_init`
+service registers a filesystem snapshot repository (`local_backup`, backed by
+the bind-mounted `./backups/elasticsearch`) and a snapshot lifecycle policy
+(`daily-snapshots`): one snapshot of all indices at midnight (UTC), kept for 30
+days (at least 5, at most 30 snapshots). Verified on the running cluster: the
+repository and the policy are registered, and the last scheduled snapshot
+completed with no failures. Restore steps are in
+`docs/backup-scripts/Disaster-Recovery.md`, Section 3.
 
 ---
 
@@ -320,7 +386,8 @@ now in place:
 - **Automated backups** — `postgres_backup` runs `pg_dump` daily against
   Postgres, writing timestamped plain-SQL dumps to a host-mounted directory
   (surviving container/volume recreation), with 7-day retention via `find
-  -mtime +7 -delete`.
+  -mtime +7 -delete`. Elasticsearch has its own daily snapshots (Section 6),
+  also written to a host-mounted directory.
 - **Aggregated health check** — the backend exposes two endpoints, kept
   deliberately separate: `GET /health` (used by the Docker Compose
   `healthcheck:` for the `backend` service itself — checks database, Redis,
@@ -357,7 +424,7 @@ now in place:
   useful if it can still report a problem when other parts of the stack
   (including the frontend itself) are degraded or failing to build/serve.
 - **Disaster recovery procedures** — documented in full in
-  `docs/DISASTER_RECOVERY.md`: a tested, step-by-step Postgres restore
+  `docs/backup-scripts/Disaster-Recovery.md`: a tested, step-by-step Postgres restore
   procedure (identify backup → stop writers → safety dump of current state →
   drop/recreate database → restore → restart → verify via the internal
   `/health`); a recoverability table per Docker volume; and a dedicated
@@ -400,11 +467,22 @@ the WAF's block masked the real cause.
 **Immediate fix applied:** `docker compose restart nginx`, which forces a
 fresh DNS lookup.
 
-**Structural fix (resolving via the `127.0.0.11` Docker embedded DNS resolver
-with `proxy_pass` built from a variable, so nginx re-resolves on every
-request instead of caching for the container's lifetime) was identified but
-deliberately not applied** — logged here as a known, accepted trade-off for
-this project's scope rather than a silently dropped item.
+**Structural fix (now applied):** it was first identified and deliberately
+deferred, and has since been implemented in the nginx template. nginx resolves
+its upstreams through Docker's embedded DNS (`resolver 127.0.0.11 valid=10s;`)
+and every `proxy_pass` is built from a variable (`set $upstream_backend
+http://backend:8000;`, `proxy_pass $upstream_backend;`), so the hostname is
+resolved at request time, cached for at most 10 seconds, instead of once at
+startup for the lifetime of the container. A recreated `backend` (or any other
+service) no longer needs an nginx restart. A side effect is that nginx stops
+rewriting the URI by itself, so `/health` uses an explicit `rewrite` to reach
+`/health/status`. Detail in `nginx/template/README.md`, "DNS resolution".
+
+**Response-phase WAF masking fix applied:** CRS rule `950100` (which scored any
+upstream `5xx` error in phase 4 and triggered rule `959100` to mask server errors
+as `403 Forbidden`) was removed via `SecRuleRemoveById 950100` in `before-crs.conf`.
+This ensures upstream error semantics (`500`, `502`, `503`) are surfaced accurately
+to clients and monitoring tools rather than masquerading as security violations.
 
 ---
 
@@ -425,37 +503,62 @@ with the valid key provided.
 ## 11. Known Gaps & Future Work
 
 Updated from the original report — several previous gaps are now closed
-(Vault dev mode, forum per-user rate limiting, centralized logging); what
-remains open:
+(Vault dev mode, forum per-user rate limiting, centralized logging, Postgres
+least privilege for the backend and exporter, container privilege hardening,
+nginx DNS caching, the rate limit reset test); what remains as a known
+limitation:
 
-- **Container hardening** — `no-new-privileges`, `read_only` filesystems
-  where feasible, not yet applied across services.
-- **Rate limit reset test (Test 12)** — verifying that a successful login
-  clears the failed-attempt counter for a real account remains dependent on
-  the registration flow being fully exercised in a test environment; not a
-  rate-limiting defect, a test-coverage gap.
-- **nginx DNS caching** (Section 9) — accepted trade-off, structural fix
-  identified but not applied, given the project's scope and timeline.
-- **Elasticsearch/WAF-audit data has no backup** — by design: ILM already
-  caps its useful lifetime at 14 days, and it is operational/diagnostic data,
-  not a system of record (see `docs/DISASTER_RECOVERY.md` §3).
+- ~~`postgres_exporter` still connects as the Postgres superuser~~ — **resolved.**
+  The exporter now connects as `postgres_exporter`, a dedicated monitoring role
+  provisioned idempotently by `postgres_app_user_init` and granted `pg_monitor`.
+  It has access to server-wide performance metrics and statistics, with zero access
+  to user application tables.
+- ~~Container hardening (`no-new-privileges`)~~ — **resolved.**
+  `security_opt: [no-new-privileges:true]` is now enforced across all 28 Compose
+  services, including the one-shot init containers, preventing processes from gaining
+  additional privileges via setuid/setgid binaries. It does not remove capabilities
+  and does not replace running as a non-root user.
+- ~~**nginx DNS caching** (Section 9)~~ — **resolved.** nginx now resolves its
+  upstreams at request time through Docker's embedded DNS (`resolver 127.0.0.11
+  valid=10s;` with variable-based `proxy_pass`), so recreating a service no
+  longer requires restarting nginx.
+- ~~**Rate limit reset test (Test 12)**~~ — **resolved.** Registration works, so
+  `scripts/test-rate-limit-reset.sh` registers a disposable account, builds up
+  three failed attempts (the Redis counter reads `3`) and checks that a correct
+  login deletes `login_attempts:user:<id>`. Result: 9 passed, 0 failed.
+- **Elasticsearch data is backed up with daily snapshots, not treated as a
+  system of record** — the SLM policy `daily-snapshots` writes a snapshot of
+  all indices at midnight (UTC) to the `local_backup` repository
+  (`./backups/elasticsearch` on the host), kept for 30 days (at least 5, at
+  most 30 snapshots). Both the repository and the policy are re-registered on
+  every startup by `elasticsearch_ilm_init`. The repository lives on the same
+  machine as the data, so it protects against index corruption or accidental
+  deletion, not against the loss of the host (see
+  `docs/backup-scripts/Disaster-Recovery.md`, Section 3).
 
 ---
 
 ## 12. Deliverables Produced
 
-- `SECURITY_TESTING.md` — infrastructure security tests
-- `RATE_LIMITING.md` — rate limiting design and implementation
-- `RATE_LIMIT_TESTING.md` — rate limiting validation tests
-- `NGINX_CONFIG.md` — nginx configuration reference
-- `METRICS.md` — Prometheus metrics module
-- `AUTH_HARDENING_REPORT.md` — authentication/secrets hardening pass
+- `docs/security/SECURITY_TESTING.md` — infrastructure security tests
+- `backend/src/rate-limiter/README.md` — rate limiting design and implementation
+- `docs/security/RATE_LIMIT_TESTING.md` — rate limiting validation tests
+- `nginx/template/README.md` — nginx configuration reference
+- `backend/src/metrics/README.md` — Prometheus metrics module
+- `docs/security/AUTH_HARDENING_REPORT.md` — authentication/secrets hardening pass
 - `docs/logging/ILM.md` — Elasticsearch index lifecycle management
-- `docs/DISASTER_RECOVERY.md` — backup restore and disaster recovery procedures
-- `SECURITY_REPORT.md` (this document) — consolidated overview
+- `docs/backup-scripts/Disaster-Recovery.md` — backup restore and disaster recovery procedures
+- `docs/security/SECURITY_REPORT.md` (this document) — consolidated overview
 - Working `RateLimiterService` (NestJS, reused across login, forum, and the Admin Public API)
 - `backend_migrate` and `backend_seed` services (automated, ordered database setup)
 - `elasticsearch_ilm_init` and `kibana_user_init` services (automated, idempotent ELK configuration)
-- Hardened Vault deployment (real init/unseal, TLS, persisted AppRole credentials)
+- `scripts/test-rate-limit-reset.sh` — end-to-end test that a successful login clears the per-account counter
+- Elasticsearch daily snapshots (SLM policy `daily-snapshots`, 30-day retention), registered by `elasticsearch_ilm_init`
+- Hardened Vault deployment (real init/unseal, TLS, persisted AppRole credentials,
+  unsealed healthcheck validation and deadlock-free startup ordering)
+- WAF response-phase rule tuning (disabled rule 950100 to preserve genuine 5xx error semantics)
+- Dedicated Nginx proxy location for Grafana Live WebSockets (`/grafana/api/live/`)
 - Aggregated health check (`/health`, `/health/status`) and standalone status page
+- Least-privilege Postgres roles (`app_user` for backend runtime, `postgres_exporter` with `pg_monitor` for metrics), provisioned idempotently by `postgres_app_user_init` on every startup
+- Container hardening with `no-new-privileges:true` enforced across all 28 Compose services, including the init containers
 - Corrected `Makefile` (decoupled routine builds from full cache resets)

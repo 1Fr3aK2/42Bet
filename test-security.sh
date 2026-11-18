@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ============================================================
-# Transcendence - testes de seguranca (ver SECURITY_HARDENING.md)
+# 42Bet - testes de seguranca (ver SECURITY_HARDENING.md)
 # ============================================================
 #
 # Cada teste PASSA ("OK") quando a defesa existe e FALHA ("VULNERAVEL")

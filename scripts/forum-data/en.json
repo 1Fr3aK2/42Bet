@@ -1,0 +1,206 @@
+{
+  "users": [
+    {
+      "username": "demo_alex42",
+      "email": "demo.alex42@example.com"
+    },
+    {
+      "username": "demo_beatriz42",
+      "email": "demo.beatriz42@example.com"
+    },
+    {
+      "username": "demo_carlos42",
+      "email": "demo.carlos42@example.com"
+    },
+    {
+      "username": "demo_diana42",
+      "email": "demo.diana42@example.com"
+    },
+    {
+      "username": "demo_ines42",
+      "email": "demo.ines42@example.com"
+    }
+  ],
+  "posts": [
+    {
+      "title": "One-minute or five-minute predictions: which do you prefer?",
+      "content": "I have been switching between both time frames. One minute moves quickly; five minutes gives me more time to observe the trend. How do you choose?",
+      "comments": [
+        "I also prefer five minutes when the chart looks less predictable.",
+        "One minute can be interesting, but it requires close attention.",
+        "I usually decide based on current volatility."
+      ]
+    },
+    {
+      "title": "What do you check before choosing UP or DOWN?",
+      "content": "Before making a prediction, I usually look at recent price movements. Which signals help you decide?",
+      "comments": [
+        "I start with the overall direction without jumping to conclusions.",
+        "I compare the last few minutes rather than relying on one candle.",
+        "Sometimes I simply wait; there is no need to enter every round."
+      ]
+    },
+    {
+      "title": "First impressions of 42Bet",
+      "content": "I tried the app and liked being able to explore short predictions without using real money. How was your experience?",
+      "comments": [
+        "I found the concept interesting as a way to explore the interface.",
+        "The best part for me is experimenting without financial risk.",
+        "I would like more discussions about prediction results."
+      ]
+    },
+    {
+      "title": "Are predictions harder during volatile periods?",
+      "content": "When the price changes direction quickly, predictions feel less intuitive to me. Does that happen to you too?",
+      "comments": [
+        "Yes, I prefer to observe first during those periods.",
+        "A sudden move can reverse the previous trend.",
+        "Volatility makes the exercise less predictable."
+      ]
+    },
+    {
+      "title": "How do you interpret a streak of results?",
+      "content": "When you get several predictions right in a row, do you change your approach or evaluate each round separately?",
+      "comments": [
+        "I try to treat each prediction as a new event.",
+        "A good streak does not guarantee the next result.",
+        "I like reviewing the context around a streak."
+      ]
+    },
+    {
+      "title": "Does the countdown help you follow a round?",
+      "content": "I like knowing exactly how much time is left in a round. Is the countdown an important part of the experience for you?",
+      "comments": [
+        "Yes, it helps me see when the prediction will end.",
+        "The countdown should be easy to read on a phone.",
+        "Agreed; it also helps me focus."
+      ]
+    },
+    {
+      "title": "How do you use prediction history?",
+      "content": "I wonder whether looking back at previous predictions can teach us something about our choices. Do you revisit old results?",
+      "comments": [
+        "Reviewing past results may reveal interesting habits.",
+        "I compare what I expected with what actually happened.",
+        "It is useful as long as history is not mistaken for certainty."
+      ]
+    },
+    {
+      "title": "Is it better to wait for a clearer movement?",
+      "content": "Sometimes the chart appears to have no clear direction. Do you wait in those situations or make a prediction anyway?",
+      "comments": [
+        "I prefer waiting when I cannot form a reasonable idea.",
+        "I think choosing not to participate can make sense too.",
+        "It depends on whether you want to experiment or study the chart."
+      ]
+    },
+    {
+      "title": "What information belongs on the main screen?",
+      "content": "If you could highlight one thing on the prediction screen, what would you choose: current price, countdown, or recent history?",
+      "comments": [
+        "The current price should be easy to spot.",
+        "I would highlight the countdown without hiding the chart.",
+        "A summary of the previous result could be helpful."
+      ]
+    },
+    {
+      "title": "Do you use the forum on desktop or mobile?",
+      "content": "I have been switching between a desktop browser and my phone. Which feels more comfortable for following discussions?",
+      "comments": [
+        "Longer discussions are easier to read on desktop.",
+        "Mobile is more convenient for a quick check.",
+        "Buttons should be comfortable to use on both."
+      ]
+    },
+    {
+      "title": "How would you explain 42Bet to a friend?",
+      "content": "I am looking for a simple explanation: we make short predictions about Bitcoin price direction, without real money. What would you add?",
+      "comments": [
+        "I would mention that it is a learning and social experience.",
+        "I would also explain the different time frames.",
+        "And that the forum lets people compare their opinions."
+      ]
+    },
+    {
+      "title": "A question about five-minute predictions",
+      "content": "When you choose five minutes, do you look at a longer part of the chart or use the same information as for a one-minute prediction?",
+      "comments": [
+        "I try to look at a little more context.",
+        "The chosen time frame changes how I interpret the chart.",
+        "I am still experimenting, so I compare both approaches."
+      ]
+    },
+    {
+      "title": "Forum topics you would like to discuss",
+      "content": "Beyond Bitcoin predictions, I would like this space to be useful for questions and suggestions about the app. Which topics interest you?",
+      "comments": [
+        "I would like to discuss better ways to show results.",
+        "Threads about using the application would be useful.",
+        "I also enjoy talking about how we interpret charts."
+      ]
+    },
+    {
+      "title": "Tips for writing clear forum titles",
+      "content": "When I start a discussion, I try to make the subject obvious in the title. Does that help you find relevant conversations?",
+      "comments": [
+        "Yes, specific titles make searching much easier.",
+        "I prefer posts with a clear question too.",
+        "A good title helps avoid several identical threads."
+      ]
+    },
+    {
+      "title": "Is searching old posts useful?",
+      "content": "I have been trying to find discussions by keyword. Which terms do you use when looking for an older topic?",
+      "comments": [
+        "I usually search for the main subject of the discussion.",
+        "I use short terms like chart or prediction.",
+        "Filtering by author could also be useful."
+      ]
+    },
+    {
+      "title": "Would more prediction examples help?",
+      "content": "I think it is useful to compare decisions across different scenarios, even when results are surprising. Which examples would help you most?",
+      "comments": [
+        "I would like an example with very little price movement.",
+        "A scenario with rapid direction changes would help too.",
+        "Comparing one and five minutes sounds useful."
+      ]
+    },
+    {
+      "title": "Why respectful disagreement matters",
+      "content": "When two people read the same chart differently, that can lead to a good conversation. How do you explain your view?",
+      "comments": [
+        "I describe the signals I noticed and leave room for uncertainty.",
+        "I agree, different views make discussions richer.",
+        "It is good to debate ideas without making everything competitive."
+      ]
+    },
+    {
+      "title": "What makes an interface easy to use?",
+      "content": "An app feels easier to use when the next step is obvious. What matters most to you when navigating an interface?",
+      "comments": [
+        "Consistent button placement helps a lot.",
+        "Clear error messages make a real difference.",
+        "I also value readable text and good contrast."
+      ]
+    },
+    {
+      "title": "How often do you check price movements?",
+      "content": "Some people watch the chart continuously, while others look again only near the end of the round. What do you prefer?",
+      "comments": [
+        "I tend to watch the beginning and the end.",
+        "I check regularly but try not to change my mind every second.",
+        "It depends on the duration of the prediction."
+      ]
+    },
+    {
+      "title": "Ideas for better forum conversations",
+      "content": "Now that a few discussions are open, what improvements would make the forum easier to use and more welcoming?",
+      "comments": [
+        "Maybe highlighting the newest topics.",
+        "I would like to find my own posts easily.",
+        "Keeping discussions organized is already a big help for me."
+      ]
+    }
+  ]
+}

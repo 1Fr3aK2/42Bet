@@ -4,13 +4,17 @@ services:
     build:
       context: ./backend
     networks:
-      - transcendence
+      - 42Bet
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?schema=public
     depends_on:
       postgres:
         condition: service_healthy
+      postgres_app_user_init:
+        condition: service_completed_successfully
     command: ["npx", "prisma", "migrate", "deploy"]
+    security_opt:
+      - no-new-privileges:true
     restart: on-failure
 
   backend_seed:
@@ -18,7 +22,7 @@ services:
     build:
       context: ./backend
     networks:
-      - transcendence
+      - 42Bet
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?schema=public
       VAULT_ADDR: ${VAULT_ADDR}
@@ -33,6 +37,8 @@ services:
       vault_init:
         condition: service_completed_successfully
     command: ["npx", "prisma", "db", "seed"]
+    security_opt:
+      - no-new-privileges:true
     restart: on-failure
 
   backend:
@@ -40,13 +46,12 @@ services:
     build:
       context: ./backend
     networks:
-      - transcendence
+      - 42Bet
     environment:
       POSTGRES_DB: ${POSTGRES_DB}
       VAULT_ADDR: ${VAULT_ADDR}
       VAULT_CACERT: ${VAULT_CACERT}
       NODE_EXTRA_CA_CERTS: ${VAULT_CACERT}
-      ELASTIC_PASSWORD: "${ELASTIC_PASSWORD}"
     volumes:
       - ./vault/certs:/etc/vault/certs:ro
       - vault-approle:/vault/approle:ro
@@ -69,6 +74,8 @@ services:
       timeout: 5s
       retries: 5
       start_period: 30s
+    security_opt:
+      - no-new-privileges:true
     restart: unless-stopped
 
   frontend:
@@ -76,7 +83,7 @@ services:
     build:
       context: ./frontend
     networks:
-      - transcendence
+      - 42Bet
     depends_on:
       backend:
         condition: service_healthy
@@ -86,6 +93,8 @@ services:
       timeout: 5s
       retries: 5
       start_period: 30s
+    security_opt:
+      - no-new-privileges:true
     restart: unless-stopped
 
   modsec-audit-init:
@@ -96,12 +105,14 @@ services:
       - touch /var/log/modsecurity/audit.log && chown -R 101:101 /var/log/modsecurity
     volumes:
       - modsec-audit-log:/var/log/modsecurity
+    security_opt:
+      - no-new-privileges:true
 
   nginx:
     container_name: nginx
     image: owasp/modsecurity-crs:4-nginx-202606261106
     networks:
-      - transcendence
+      - 42Bet
     ports:
       - "443:8443"
       - "80:8080"
@@ -110,7 +121,6 @@ services:
       - ./scripts/setup-certs.sh:/scripts/setup-certs.sh
       - ./nginx/certs:/etc/nginx/certs
       - ./nginx/modsecurity/before-crs.conf:/etc/modsecurity.d/owasp-crs/rules/REQUEST-900-EXCLUSION-RULES-BEFORE-CRS.conf
-      - ./nginx/modsecurity/exclusions.conf:/etc/modsecurity.d/owasp-crs/rules/RESPONSE-999-EXCLUSION-RULES-AFTER-CRS.conf
       - modsec-audit-log:/var/log/modsecurity
       - ./nginx/status:/usr/share/nginx/status:ro
     depends_on:
@@ -132,24 +142,28 @@ services:
       SSL_CERT_KEY_FILE: /etc/nginx/certs/nginx.key
       SSL_PORT: 8443
       PORT: 8080
-      SERVER_NAME: Transcendence
+      SERVER_NAME: 42Bet
       SSL_PROTOCOLS: TLSv1.2 TLSv1.3
       PARANOIA: "2"
       BLOCKING_PARANOIA: "2"
       MODSEC_AUDIT_LOG_PARTS: "AIJDEFHZ"
       MODSEC_AUDIT_LOG: /var/log/modsecurity/audit.log
+    security_opt:
+      - no-new-privileges:true
     restart: unless-stopped
 
   nginx_exporter:
     container_name: nginx_exporter
     image: nginx/nginx-prometheus-exporter
     networks:
-      - transcendence
+      - 42Bet
     command:
       - "-nginx.scrape-uri=http://nginx:8080/stub_status"
     depends_on:
       nginx:
         condition: service_healthy
+    security_opt:
+      - no-new-privileges:true
     restart: unless-stopped
 
   vault-data-init:
@@ -157,12 +171,14 @@ services:
     command: ["chown", "-R", "100:1000", "/vault/data"]
     volumes:
       - vault-data:/vault/data
+    security_opt:
+      - no-new-privileges:true
 
   vault:
     container_name: vault
     image: hashicorp/vault
     networks:
-      - transcendence
+      - 42Bet
     environment:
       VAULT_ADDR: ${VAULT_ADDR}
       VAULT_CACERT: ${VAULT_CACERT}
@@ -171,7 +187,7 @@ services:
       - ./vault/certs:/etc/vault/certs:ro
       - vault-data:/vault/data
     healthcheck:
-      test: ["CMD-SHELL", "vault status; [ $? -ne 1 ]"]
+      test: ["CMD", "vault", "status"]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -186,6 +202,8 @@ services:
     depends_on:
       vault-data-init:
         condition: service_completed_successfully
+    security_opt:
+      - no-new-privileges:true
     restart: unless-stopped
 
   vault-keys-init:
@@ -193,29 +211,36 @@ services:
     command: ["chown", "-R", "100:1000", "/vault/keys"]
     volumes:
       - vault-keys:/vault/keys
+    security_opt:
+      - no-new-privileges:true
 
   vault-approle-init:
     image: alpine
     command: ["chown", "-R", "100:1000", "/vault/approle"]
     volumes:
       - vault-approle:/vault/approle
+    security_opt:
+      - no-new-privileges:true
 
   vault_init:
     container_name: vault_init
     image: hashicorp/vault
     networks:
-      - transcendence
+      - 42Bet
     environment:
       VAULT_ADDR: ${VAULT_ADDR}
       VAULT_CACERT: ${VAULT_CACERT}
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      APP_DB_USER: ${APP_DB_USER}
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD}
       REDIS_PASSWORD: ${REDIS_PASSWORD}
       ADMIN_API_KEY: ${ADMIN_API_KEY}
       ADMIN_USERNAME: ${ADMIN_USERNAME}
       ADMIN_EMAIL: ${ADMIN_EMAIL}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD}
       JWT_SECRET: ${JWT_SECRET}
+      ES_MONITOR_PASSWORD: ${ES_MONITOR_PASSWORD}
     entrypoint: ["sh", "/etc/vault/config/vault-init.sh"]
     volumes:
       - ./vault/config:/etc/vault/config:ro
@@ -224,18 +249,20 @@ services:
       - vault-approle:/vault/approle
     depends_on:
       vault:
-        condition: service_healthy
+        condition: service_started
       vault-keys-init:
         condition: service_completed_successfully
       vault-approle-init:
         condition: service_completed_successfully
+    security_opt:
+      - no-new-privileges:true
     restart: on-failure:3
 
   grafana:
     container_name: grafana
     image: grafana/grafana
     networks:
-      - transcendence
+      - 42Bet
     environment:
       GF_SECURITY_ADMIN_USER: ${GF_SECURITY_ADMIN_USER}
       GF_SECURITY_ADMIN_PASSWORD: ${GF_SECURITY_ADMIN_PASSWORD}
@@ -248,6 +275,8 @@ services:
     depends_on:
       prometheus:
         condition: service_healthy
+    security_opt:
+      - no-new-privileges:true
     restart: unless-stopped
 
   prometheus-init:
@@ -255,12 +284,14 @@ services:
     command: ["chown", "-R", "65534:65534", "/var/lib/prometheus/data"]
     volumes:
       - prometheus-data:/var/lib/prometheus/data
+    security_opt:
+      - no-new-privileges:true
 
   prometheus:
     container_name: prometheus
     image: prom/prometheus
     networks:
-      - transcendence
+      - 42Bet
     volumes:
       - prometheus-data:/var/lib/prometheus/data
       - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
@@ -279,6 +310,8 @@ services:
       timeout: 3s
       retries: 5
       start_period: 10s
+    security_opt:
+      - no-new-privileges:true
     restart: unless-stopped
 
   redis:
@@ -286,7 +319,7 @@ services:
     image: redis
     command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD}
     networks:
-      - transcendence
+      - 42Bet
     volumes:
       - redis-data:/data
     healthcheck:
@@ -295,26 +328,30 @@ services:
       timeout: 3s
       retries: 5
       start_period: 10s
+    security_opt:
+      - no-new-privileges:true
     restart: unless-stopped
 
   redis_exporter:
     container_name: redis_exporter
     image: oliver006/redis_exporter
     networks:
-      - transcendence
+      - 42Bet
     environment:
       REDIS_ADDR: redis:6379
       REDIS_PASSWORD: ${REDIS_PASSWORD}
     depends_on:
       redis:
         condition: service_healthy
+    security_opt:
+      - no-new-privileges:true
     restart: unless-stopped
 
   postgres:
     container_name: postgres
     image: postgres:16
     networks:
-      - transcendence
+      - 42Bet
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
@@ -327,13 +364,38 @@ services:
       timeout: 3s
       retries: 5
       start_period: 10s
+    security_opt:
+      - no-new-privileges:true
     restart: unless-stopped
+
+  postgres_app_user_init:
+    container_name: postgres_app_user_init
+    image: postgres:16
+    networks:
+      - 42Bet
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      APP_DB_USER: ${APP_DB_USER}
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD}
+      POSTGRES_EXPORTER_USER: ${POSTGRES_EXPORTER_USER:-postgres_exporter}
+      POSTGRES_EXPORTER_PASSWORD: ${POSTGRES_EXPORTER_PASSWORD:-${POSTGRES_PASSWORD}}
+    volumes:
+      - ./postgres/init/ensure-app-user.sh:/ensure-app-user.sh:ro
+    entrypoint: ["sh", "/ensure-app-user.sh"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    security_opt:
+      - no-new-privileges:true
+    restart: on-failure
 
   postgres_backup:
     container_name: postgres_backup
     image: postgres:16
     networks:
-      - transcendence
+      - 42Bet
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
@@ -351,18 +413,24 @@ services:
         /usr/local/bin/backup-postgres.sh;
         sleep 86400;
       done"
+    security_opt:
+      - no-new-privileges:true
     restart: unless-stopped
 
   postgres_exporter:
     container_name: postgres_exporter
     image: prometheuscommunity/postgres-exporter
     networks:
-      - transcendence
+      - 42Bet
     environment:
-      DATA_SOURCE_NAME: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
+      DATA_SOURCE_NAME: postgresql://${POSTGRES_EXPORTER_USER:-postgres_exporter}:${POSTGRES_EXPORTER_PASSWORD:-${POSTGRES_PASSWORD}}@postgres:5432/${POSTGRES_DB}?sslmode=disable
     depends_on:
       postgres:
         condition: service_healthy
+      postgres_app_user_init:
+        condition: service_completed_successfully
+    security_opt:
+      - no-new-privileges:true
     restart: unless-stopped
 
   elasticsearch_backups_init:
@@ -370,12 +438,14 @@ services:
     command: ["chown", "-R", "1000:0", "/usr/share/elasticsearch/backups"]
     volumes:
       - ./backups/elasticsearch:/usr/share/elasticsearch/backups
+    security_opt:
+      - no-new-privileges:true
 
   elasticsearch:
     container_name: elasticsearch
     image: docker.elastic.co/elasticsearch/elasticsearch:8.19.18
     networks:
-      - transcendence
+      - 42Bet
     environment:
       discovery.type: single-node
       xpack.security.enabled: "true"
@@ -397,13 +467,15 @@ services:
       timeout: 5s
       retries: 10
       start_period: 30s
+    security_opt:
+      - no-new-privileges:true
     restart: unless-stopped
 
   logstash:
     container_name: logstash
     image: docker.elastic.co/logstash/logstash:8.19.18
     networks:
-      - transcendence
+      - 42Bet
     environment:
       LS_JAVA_OPTS: "-Xms256m -Xmx256m"
       ELASTIC_PASSWORD: "${ELASTIC_PASSWORD}"
@@ -415,6 +487,8 @@ services:
         condition: service_healthy
       elasticsearch_ilm_init:
         condition: service_completed_successfully
+    security_opt:
+      - no-new-privileges:true
     restart: unless-stopped
 
 
@@ -422,7 +496,7 @@ services:
     container_name: kibana_user_init
     image: docker.elastic.co/elasticsearch/elasticsearch:8.19.18
     networks:
-      - transcendence
+      - 42Bet
     environment:
       ELASTIC_PASSWORD: "${ELASTIC_PASSWORD}"
       KIBANA_PASSWORD: "${KIBANA_PASSWORD}"
@@ -436,15 +510,18 @@ services:
     depends_on:
       elasticsearch:
         condition: service_healthy
+    security_opt:
+      - no-new-privileges:true
     restart: on-failure
 
   elasticsearch_ilm_init:
     container_name: elasticsearch_ilm_init
     image: docker.elastic.co/elasticsearch/elasticsearch:8.19.18
     networks:
-      - transcendence
+      - 42Bet
     environment:
       ELASTIC_PASSWORD: "${ELASTIC_PASSWORD}"
+      ES_MONITOR_PASSWORD: "${ES_MONITOR_PASSWORD}"
     entrypoint: ["/bin/sh"]
     command: ["/scripts/ilm-init.sh"]
     volumes:
@@ -452,12 +529,14 @@ services:
     depends_on:
       elasticsearch:
         condition: service_healthy
+    security_opt:
+      - no-new-privileges:true
     restart: on-failure
   kibana:
     container_name: kibana
     image: docker.elastic.co/kibana/kibana:8.19.18
     networks:
-      - transcendence
+      - 42Bet
     environment:
       ELASTICSEARCH_HOSTS: '["http://elasticsearch:9200"]'
       ELASTICSEARCH_USERNAME: "kibana_system"
@@ -476,6 +555,8 @@ services:
       timeout: 5s
       retries: 10
       start_period: 30s
+    security_opt:
+      - no-new-privileges:true
     restart: unless-stopped
 
   filebeat:
@@ -484,7 +565,7 @@ services:
       context: ./logging/filebeat
     user: root
     networks:
-      - transcendence
+      - 42Bet
     volumes:
       - /var/lib/docker/containers:/var/lib/docker/containers:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
@@ -494,6 +575,8 @@ services:
         condition: service_started
       modsec-audit-init:
         condition: service_completed_successfully
+    security_opt:
+      - no-new-privileges:true
     restart: unless-stopped
 
 volumes:
@@ -508,5 +591,5 @@ volumes:
   modsec-audit-log:
 
 networks:
-  transcendence:
+  42Bet:
     driver: bridge

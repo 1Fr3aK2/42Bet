@@ -32,8 +32,11 @@
     server {
         listen ${SSL_PORT} ssl;
         listen [::]:${SSL_PORT} ssl;
+        http2 on;
 
         server_name  ${SERVER_NAME};
+
+        proxy_hide_header X-Powered-By;
 
         ssl_protocols ${SSL_PROTOCOLS};
         ssl_certificate   ${SSL_CERT_FILE};
@@ -122,10 +125,6 @@
         }
 
         location /socket.io/ {
-            modsecurity on;
-            modsecurity_rules '
-                SecRuleRemoveById 920420
-            ';
             proxy_pass $upstream_backend;
             proxy_http_version 1.1;
             proxy_set_header Host $host;
@@ -142,6 +141,17 @@
             proxy_set_header X-Real-IP $remote_addr;
         }
 
+        location /grafana/api/live/ {
+            proxy_pass $upstream_grafana;
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection $connection_upgrade;
+            proxy_read_timeout 3600s;
+            proxy_send_timeout 3600s;
+        }
+
         # Prometheus is not published publicly: Grafana proxies all PromQL
         # queries server-side via /grafana/api/ds/query (which requires a
         # Grafana session). Direct access would expose metric names, internal
@@ -151,14 +161,6 @@
         }
 
         location /kibana/ {
-            modsecurity on;
-            modsecurity_rules '
-                SecRuleRemoveById 932236
-                SecRuleRemoveById 932240
-                SecRuleRemoveById 942220
-                SecRuleRemoveById 942340
-                SecRuleRemoveById 934190
-            ';
             proxy_pass $upstream_kibana;
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;

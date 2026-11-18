@@ -4,6 +4,17 @@ set -e
 KEYS_FILE="/vault/keys/init.json"
 APPROLE_DIR="/vault/approle"
 
+# 0. Wait for Vault API to become accessible (sealed or unsealed)
+echo "[*] A aguardar que o Vault esteja acessível..."
+while true; do
+  STATUS=0
+  vault status >/dev/null 2>&1 || STATUS=$?
+  if [ "$STATUS" -eq 0 ] || [ "$STATUS" -eq 2 ]; then
+    break
+  fi
+  sleep 1
+done
+
 # 1. Initialize Vault — only runs once, the first time the container starts.
 #    On later runs the keys file already exists and this step is skipped.
 if [ ! -f "$KEYS_FILE" ]; then
@@ -53,11 +64,12 @@ fi
 vault secrets enable -path=secret -version=2 kv 2>/dev/null || true
 
 # 4. Store secrets (idempotent — vault kv put overwrites without failing)
-vault kv put secret/postgres user="${POSTGRES_USER}" password="${POSTGRES_PASSWORD}"
+vault kv put secret/postgres user="${APP_DB_USER}" password="${APP_DB_PASSWORD}"
 vault kv put secret/redis password="${REDIS_PASSWORD}"
 vault kv put secret/admin-api key="${ADMIN_API_KEY}"
 vault kv put secret/admin-account username="${ADMIN_USERNAME}" email="${ADMIN_EMAIL}" password="${ADMIN_PASSWORD}"
 vault kv put secret/jwt secret="${JWT_SECRET}"
+vault kv put secret/elasticsearch-monitor username="es_monitor" password="${ES_MONITOR_PASSWORD}"
 
 # 5. Load the policy
 vault policy write backend-policy /etc/vault/config/backend-policy.hcl

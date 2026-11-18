@@ -4,7 +4,7 @@
 
 The initialization script (`ilm-init.sh`) defined an Index Lifecycle Management (ILM) policy with a `hot` phase that triggered a `rollover` action when an index reached 1 day of age or 5GB in size. 
 
-However, the Logstash pipeline in this project is configured to write logs to plain, date-named indices (e.g., `transcendence-logs-YYYY.MM.DD`). A `rollover` action requires a write alias or a data stream to function correctly. Because neither was present, the ILM policy would fail on the `hot` phase, entering an error state. 
+However, the Logstash pipeline in this project is configured to write logs to plain, date-named indices (e.g., `42bet-logs-YYYY.MM.DD`). A `rollover` action requires a write alias or a data stream to function correctly. Because neither was present, the ILM policy would fail on the `hot` phase, entering an error state. 
 
 When an ILM policy enters an error state, it never progresses to subsequent phases. As a result, the `delete` phase (which was supposed to remove logs after 14 days) was never reached, meaning logs would be retained indefinitely, eventually exhausting disk space.
 

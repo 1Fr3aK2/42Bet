@@ -490,7 +490,7 @@ waf-audit-YYYY.MM.dd
 Other logs should appear in:
 
 ```text
-transcendence-logs-YYYY.MM.dd
+42bet-logs-YYYY.MM.dd
 ```
 
 The actual parsing and routing of these events is performed by the Logstash pipeline.

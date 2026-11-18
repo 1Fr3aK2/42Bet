@@ -8,13 +8,13 @@ Because this project runs in a constrained local Docker environment with only a 
 
 ## The Applied Change
 
-The index templates created by `ilm-init.sh` (both `transcendence-logs-template` and `waf-audit-template`) were updated to explicitly tell Elasticsearch to expect `0` replicas for new log indices.
+The index templates created by `ilm-init.sh` (both `42bet-logs-template` and `waf-audit-template`) were updated to explicitly tell Elasticsearch to expect `0` replicas for new log indices.
 
 ```diff
      "template": {
        "settings": {
--        "index.lifecycle.name": "transcendence-logs-policy"
-+        "index.lifecycle.name": "transcendence-logs-policy",
+-        "index.lifecycle.name": "42bet-logs-policy"
++        "index.lifecycle.name": "42bet-logs-policy",
 +        "index.number_of_replicas": "0"
        }
      }

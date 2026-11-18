@@ -6,3 +6,4 @@ vault/certs/
 node_modules/
 scripts/nginx/
 backups/
+/scripts/logs/

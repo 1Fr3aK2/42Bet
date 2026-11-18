@@ -86,8 +86,11 @@ The script handles, in order:
 4. **Enabling the `secret/` KV v2 engine** — dev-mode auto-mounts this;
    production mode doesn't, so it has to be enabled explicitly
    (`vault secrets enable -path=secret -version=2 kv`), idempotently.
-5. **Storing the five secrets** (Postgres, Redis, admin API key, admin
-   account, JWT secret).
+5. 5. **Storing the six secrets** (Postgres, Redis, admin API key, admin
+   account, JWT secret, Elasticsearch monitoring user). The Postgres entry holds the credentials of
+   `app_user`, the backend's least-privilege database role (audit finding
+   S9), not those of the `POSTGRES_USER` superuser — see
+   `postgres/init/ensure-app-user.sh`.
 6. **Loading the policy** (`backend-policy`) and **enabling AppRole**.
 7. **Creating `backend-role`**, with `secret_id_ttl=0` — see below.
 8. **Writing `role_id` and `secret_id`** to `/vault/approle`.
@@ -136,7 +139,7 @@ real multi-host deployment.
 **New since the previous revision of this document**, and the most
 behaviorally significant change in this update.
 
-After the five secrets, the policy, and the AppRole are provisioned
+After the six secrets, the policy, and the AppRole are provisioned
 (steps 4–8 above), the script now **revokes the Vault root token it used to
 do all of this** (`vault token revoke`). This closes a real gap noted
 previously only as an accepted limitation ("the root token should be
@@ -176,12 +179,105 @@ be picked up by just re-running `vault_init` anymore.
 The correct way to update a secret now, without a full volume wipe, is to
 generate a fresh root token using the unseal key shares (still valid —
 revoking the root token does not invalidate the unseal keys), then use it
-directly:
+directly. On Vault 2.x, generating that token requires a temporary
+configuration change first — see "Recovering a root token on Vault 2.x"
+below.
+
+#### Recovering a root token on Vault 2.x
+
+Since Vault 2.0.0 (CVE-2026-5807, HashiCorp bulletin HCSEC-2026-08),
+`sys/generate-root` is no longer unauthenticated: in addition to the unseal
+key shares, it requires a valid Vault token. Because this project revokes
+the root token at the end of the bootstrap, a plain
+`docker compose exec vault vault operator generate-root -init` fails on
+Vault 2.x with:
+
+```
+Code: 403. Errors:
+* permission denied
+```
+
+This error is returned by Vault itself — the request goes straight to
+`https://vault:8200`, bypassing Nginx and the WAF. It was reproduced on
+Vault v2.0.4 and v2.2.1.
+
+HashiCorp's supported workaround is the `enable_unauthenticated_access`
+setting, a **list** of endpoint names (`"generate-root"`, `"rekey"`,
+`"generate-operation-token"`) for which the previous unauthenticated
+behavior is restored. Enable it only for the duration of this procedure:
+
+1. Add this line to the top level of `vault/config/vault.hcl`. It must be a
+   list: `enable_unauthenticated_access = true` is rejected and Vault fails
+   to start with `unknown slice type`.
+
+   ```hcl
+   enable_unauthenticated_access = ["generate-root"]
+   ```
+
+2. Restart Vault so it re-reads the file, and unseal it again (see
+   "Operational Note: Vault Restarts" below):
+
+   ```bash
+   docker compose restart vault
+   docker compose up -d vault_init
+   ```
+
+3. Start the root token generation and note the `Nonce` and the `OTP`:
+
+   ```bash
+   docker compose exec vault vault operator generate-root -init
+   ```
+
+4. Submit 3 of the 5 unseal key shares (`unseal_keys_b64` in `init.json` on
+   the `vault-keys` volume), one per command. When the key is passed as an
+   argument, the `-nonce` flag is required; alternatively, run the command
+   without arguments and paste each key at the hidden prompt. `Progress`
+   goes `1/3`, `2/3`, `3/3`:
+
+   ```bash
+   docker compose exec vault vault operator generate-root -nonce=<nonce> "<unseal_key>"
+   ```
+
+5. After the third key, the output contains an `Encoded Token`. Decode it
+   with the OTP from step 3:
+
+   ```bash
+   docker compose exec vault vault operator generate-root \
+     -decode=<encoded_token> -otp=<otp>
+   ```
+
+   The result (`hvs....`) is the new root token. To abort an in-progress
+   generation and start over, use `vault operator generate-root -cancel`;
+   the nonce and OTP of the cancelled attempt are no longer valid.
+
+6. Use the token (see "Updating the secret" below), then clean up: revoke
+   it, remove the `enable_unauthenticated_access` line from `vault.hcl`,
+   and restart and unseal Vault again.
+
+   ```bash
+   docker compose exec -e VAULT_TOKEN=<new_root_token> vault vault token revoke -self
+   ```
+
+   If a generation was started and not completed, cancel it **before**
+   removing the line (`docker compose exec vault vault operator
+   generate-root -cancel`): once the setting is gone, the cancel request
+   needs a token like any other call to this endpoint.
+
+> **Warning:** while `enable_unauthenticated_access` is set, anyone who can
+> reach the Vault API can start or cancel a root token generation and block
+> operators from completing it — the denial of service that Vault 2.0.0
+> fixed. Keep the setting only for the duration of this procedure and never
+> commit it to the repository.
+
+`init.json` also contains the (already revoked) initial root token and all
+the unseal key shares; treat its contents as sensitive and do not paste them
+into issues, pull requests or chats.
+
+#### Updating the secret
+
+With the new root token:
 
 ```bash
-docker compose exec vault vault operator generate-root -init
-# follow the prompts, supplying 3 of the 5 unseal key shares from init.json,
-# to obtain a new, valid root token
 docker compose exec vault sh -c 'VAULT_TOKEN=<new_root_token> vault kv put secret/jwt secret="<new_value>"'
 ```
 
@@ -191,6 +287,26 @@ clean slate is acceptable — see `DISASTER_RECOVERY.md` §4 for that scenario.
 This section exists so the *other* option (updating one secret without
 wiping everything) isn't a dead end now that the root token is gone by
 default.
+
+**This also applies to the S9 change** (least-privilege database role).
+`secret/postgres` now holds the credentials of `app_user`, written by
+`vault-init.sh` from `APP_DB_USER` / `APP_DB_PASSWORD`. On an environment
+whose Vault was bootstrapped *before* that change, re-running `vault_init`
+will not rewrite the secret, so the backend keeps connecting with the old
+(superuser) credentials until the secret is updated with the procedure above
+(`vault kv put secret/postgres user="<app_user>" password="<password>"`) or
+the stack is rebuilt with `make re`. The `postgres_app_user_init` service
+creates the database role on its own on every `docker compose up`, so only
+the Vault side needs this manual step.
+
+**The same applies to `elasticsearch-monitor`** (the `es_monitor` health-check
+user). On an environment whose Vault was bootstrapped before this change,
+`vault_init` exits early, so neither `secret/elasticsearch-monitor` nor the
+updated `backend-policy` is provisioned, and `loadSecretsFromVault()` throws
+when it cannot read the secret, so the backend cannot finish its bootstrap.
+`ES_MONITOR_PASSWORD` must also be set in `.env`, otherwise
+`elasticsearch_ilm_init` exits on its first line. The path verified for this
+change is a full `make re`, which re-initializes Vault from `.env`.
 
 ## Operational Note: Vault Restarts
 
@@ -220,13 +336,18 @@ surfaced several real bugs:
    config fields (only logging a warning), so `disable_mlock` was never
    actually set — which is fatal on the Vault version in use, where it no
    longer has a default.
-2. **Healthcheck deadlock** — `vault status` exits with code `2` whenever
-   Vault is sealed or uninitialized, which Docker's healthcheck treats as
-   failure. Since `vault_init` depends on `vault` being healthy, this created
-   a deadlock: Vault could never become healthy without being unsealed, but
-   unsealing needed `vault_init` to run, which needed Vault to be healthy.
-   Fixed by changing the healthcheck to only treat exit code `1` (real
-   connection/config error) as unhealthy.
+2. **Healthcheck deadlock vs sealed detection** — `vault status` exits with
+   code `2` whenever Vault is sealed or uninitialized, which Docker's
+   healthcheck treats as failure. Earlier this was worked around by accepting
+   any exit code other than 1 (`[ $? -ne 1 ]`), but that masked the sealed state:
+   restarting Vault left it sealed while Docker still marked it `healthy`,
+   letting the backend start and crash with `503 Vault is sealed`.
+   Properly resolved by:
+   - Setting the Vault healthcheck to `test: ["CMD", "vault", "status"]` (so
+     sealed or failing states correctly report `unhealthy`).
+   - Changing `vault_init`'s dependency to `depends_on: vault: condition: service_started`
+     with a readiness wait loop in `vault-init.sh`, breaking the cycle without
+     masking Vault's true operational health.
 3. **`mlock` failing under `cap_add: IPC_LOCK` alone** — Docker also
    enforces a `memlock` ulimit, defaulting to a low value regardless of
    granted capabilities. Fixed by adding `ulimits.memlock: {soft: -1, hard:
@@ -264,6 +385,11 @@ surfaced several real bugs:
 9. **AppRole credentials only ever logged, never persisted** — see "AppRole
    credential persistence" above; fixed by writing `role_id`/`secret_id` to
    the `vault-approle` volume instead of relying on `docker compose logs`.
+10. **`generate-root` returning `403` on Vault 2.x** — found while testing
+    the S9 change on an existing environment. Not a bug in this project:
+    Vault 2.0.0 made `sys/generate-root` require a valid token. The
+    documented procedure was updated instead — see "Recovering a root token
+    on Vault 2.x" above.
 
 ## How to test
 
@@ -291,3 +417,17 @@ surfaced several real bugs:
    already complete" message and an immediate exit, with no secrets
    rewritten, no policy reloaded, and no new AppRole credentials generated
    (`role_id`/`secret_id` file contents unchanged from before this run).
+8. **Backend uses the least-privilege database role (S9).** With the stack
+   up, confirm the backend connects as `app_user`:
+   `docker compose exec postgres sh -c 'psql -U $POSTGRES_USER -d $POSTGRES_DB -c "SELECT usename, count(*) FROM pg_stat_activity WHERE datname = current_database() GROUP BY usename;"'`
+   — an `app_user` row must appear.
+9. **Root token recovery on Vault 2.x.** On the clean start from step 1
+   (root token already revoked): `docker compose exec vault vault operator
+   generate-root -init` must return `403 permission denied`. Then follow
+   "Recovering a root token on Vault 2.x" — with
+   `enable_unauthenticated_access = ["generate-root"]` set, `-init` must
+   return a `Nonce` and an `OTP`, and after 3 unseal keys and the decode
+   step the new token must show the `root` policy
+   (`docker compose exec -e VAULT_TOKEN=<new_root_token> vault vault token
+   lookup`). Finish by revoking the token and removing the setting, and
+   confirm `-init` returns `403` again.

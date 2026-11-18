@@ -6,13 +6,13 @@ export default function TermsOfService() {
       <p className="legal-updated">Last updated: 29 October 2026</p>
 
       <p>
-        These terms apply to everyone who uses Transcendence. By creating an account or using
+        These terms apply to everyone who uses 42Bet. By creating an account or using
         the site, you accept them. If you do not agree, please do not use the service.
       </p>
 
       <h2>1. The service</h2>
       <p>
-        Transcendence is a free student project of the 42 Lisboa curriculum. Players predict
+        42Bet is a free student project of the 42 Lisboa curriculum. Players predict
         whether the price of Bitcoin or Ethereum will go up or down, using a virtual currency,
         and can take part in a community forum. It is provided for learning and demonstration
         only.
@@ -48,12 +48,12 @@ export default function TermsOfService() {
         </li>
         <li>Prices come from third parties and may be delayed or interrupted. The prices recorded by the server are final.</li>
         <li>We may correct balances or bets affected by a bug or by abuse, and reset the game.</li>
-        <li>Nothing on Transcendence is financial or investment advice.</li>
+        <li>Nothing on 42Bet is financial or investment advice.</li>
       </ul>
 
       <h2>5. Forum rules</h2>
       <p>
-        You keep the rights to what you post, and you allow Transcendence to display it in the
+        You keep the rights to what you post, and you allow 42Bet to display it in the
         service. You are responsible for your posts and comments. Do not publish:
       </p>
       <ul>
@@ -76,13 +76,13 @@ export default function TermsOfService() {
       <h2>7. Suspension and deletion</h2>
       <p>
         Administrators may suspend or delete accounts that break these terms. You can stop using
-        Transcendence at any time and ask for your account and data to be deleted, as explained
+        42Bet at any time and ask for your account and data to be deleted, as explained
         in the <a href="#/privacy">Privacy Policy</a>.
       </p>
 
       <h2>8. Availability and liability</h2>
       <p>
-        Transcendence is provided &quot;as is&quot;, without any guarantee that it will always be
+        42Bet is provided &quot;as is&quot;, without any guarantee that it will always be
         available or free of errors, or that data will never be lost. Since no real money is
         involved, and as far as the law allows, the team is not liable for any loss arising
         from its use.
@@ -96,7 +96,7 @@ export default function TermsOfService() {
       </p>
 
       <h2>10. Contact</h2>
-      <p>Questions about these terms can be sent to the Transcendence team at 42 Lisboa, Portugal.</p>
+      <p>Questions about these terms can be sent to the 42Bet team at 42 Lisboa, Portugal.</p>
     </article>
   );
 }

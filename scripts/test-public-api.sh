@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # ============================================================
-# Transcendence Public Admin API - Test & Demonstration Script
+# 42Bet Public Admin API - Test & Demonstration Script
 # ============================================================
 #
 # This script demonstrates and tests the Public Admin API.
@@ -215,7 +215,7 @@ EOF
 clear 2>/dev/null || true
 
 separator
-printf ' Transcendence Public Admin API\n'
+printf ' 42Bet Public Admin API\n'
 printf ' Test & Demonstration Script\n'
 separator
 

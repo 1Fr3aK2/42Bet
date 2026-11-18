@@ -1,8 +1,8 @@
-# Authentication Module - Transcendence Backend
+# Authentication Module - 42Bet Backend
 
 ## Overview
 
-This module implements user management and authentication for the Transcendence backend.
+This module implements user management and authentication for the 42Bet backend.
 
 The authentication system uses:
 

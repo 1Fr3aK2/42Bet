@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ============================================================
-# Transcendence accounts - end-to-end test
+# 42Bet accounts - end-to-end test
 # ============================================================
 #
 # Checks, through nginx, the account rules added for the final version:

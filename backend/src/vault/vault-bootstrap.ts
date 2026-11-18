@@ -84,6 +84,17 @@ export async function loadSecretsFromVault(): Promise<void> {
   }
   // Makes the JWT secret available to the authentication system
   process.env.JWT_SECRET = jwtSecret;
+
+  // Elasticsearch monitoring user (used only by the health check, cluster "monitor" privilege)
+  const esMonitorData = await readVaultSecret(vaultAddr, clientToken, 'elasticsearch-monitor');
+  const esMonitorUser = esMonitorData.username;
+  const esMonitorPassword = esMonitorData.password;
+  if (!esMonitorUser || !esMonitorPassword) {
+    throw new Error('secret/elasticsearch-monitor needs the fields "username" and "password" defined');
+  }
+  // Only lives in the Node process memory; it is not part of the container environment
+  process.env.ELASTICSEARCH_MONITOR_USER = esMonitorUser;
+  process.env.ELASTICSEARCH_MONITOR_PASSWORD = esMonitorPassword;
 }
 
 // Reads a secret from Vault using its path and an authenticated client token
