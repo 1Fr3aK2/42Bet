@@ -49,9 +49,8 @@ export class WalletController {
         return this.walletService.getWalletByUserId(userId);
     }
 
-    // Credit wallet (ADMIN)
+    // Credit wallet (ALL)
     @UseGuards(JwtAuthGuard, RolesGuard)
-    @Roles(Role.ADMIN)
     @Post(':userId/credit')
     creditWallet(
         @Param('userId', ParseIntPipe) userId: number,
@@ -63,9 +62,8 @@ export class WalletController {
         );
     }
 
-    // Debit wallet (ADMIN)
+    // Debit wallet (ALL)
     @UseGuards(JwtAuthGuard, RolesGuard)
-    @Roles(Role.ADMIN)
     @Post(':userId/debit')
     debitWallet(
         @Param('userId', ParseIntPipe) userId: number,
