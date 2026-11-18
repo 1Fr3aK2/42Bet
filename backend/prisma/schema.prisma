@@ -49,7 +49,7 @@ model Post {
   updatedAt          DateTime @updatedAt
 
   authorId           Int
-  author             User     @relation(fields: [authorId], references: [id])
+  author             User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
 
   comments           Comment[]
 }
@@ -68,7 +68,7 @@ model Comment {
   post               Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
 
   authorId           Int
-  author             User     @relation(fields: [authorId], references: [id])
+  author             User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
 }
 
 model Report {
@@ -85,7 +85,7 @@ model Report {
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
-  reporter      User      @relation("ReportsCreated", fields: [reporterId], references: [id])
+  reporter      User      @relation("ReportsCreated", fields: [reporterId], references: [id], onDelete: Cascade)
   moderator     User?     @relation("ReportsModerated", fields: [moderatorId], references: [id])
 }
 
@@ -99,7 +99,7 @@ model ModerationLog {
   moderatorId Int
   createdAt   DateTime @default(now())
 
-  moderator   User     @relation(fields: [moderatorId], references: [id])
+  moderator   User     @relation(fields: [moderatorId], references: [id], onDelete: Cascade)
 }
 
 model Bet {

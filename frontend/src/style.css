@@ -1833,3 +1833,36 @@ body {
 .legal-content a {
   color: #e6e8ec;
 }
+
+/* Manage users: delete button, its yes/no confirmation and the "deleted" notice */
+
+.mod-btn.mod-btn--danger {
+  background: #c0392b;
+  border-color: #c0392b;
+  color: #fff;
+}
+.mod-btn.mod-btn--danger:hover:not(:disabled) {
+  background: #a93226;
+  border-color: #a93226;
+  color: #fff;
+}
+.mod-btn.mod-btn--danger:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.user-confirm {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 13px;
+}
+.users-notice {
+  margin: 8px 0;
+  padding: 10px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  color: #2ecc71;
+  background: rgba(46, 204, 113, 0.1);
+  border: 1px solid rgba(46, 204, 113, 0.35);
+}

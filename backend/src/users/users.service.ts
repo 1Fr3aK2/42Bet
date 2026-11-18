@@ -191,22 +191,50 @@ async updateMe(
 	  throw error;
 	}
   }
-  
-  async deleteUser(userId: number) {
-    try {
-        await this.prisma.user.delete({
-            where: { id: userId },
-        });
 
-        return { message: 'User deleted successfully' };
+  async deleteUser(userId: number, requesterId: number) {
+    if (userId === requesterId) {
+      throw new BadRequestException('You cannot delete your own account');
+    }
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { role: true },
+    });
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    if (user.role === Role.ADMIN) {
+      throw new BadRequestException('Admin accounts cannot be deleted');
+    }
+
+    try {
+      await this.prisma.user.delete({
+        where: { id: userId },
+      });
+
+      return { message: 'User deleted successfully' };
     } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError) {
         if (error.code === 'P2025') {
-            throw new NotFoundException('User not found');
+          throw new NotFoundException('User not found');
         }
 
-        throw error;
+        // The user's posts, comments, reports and moderation logs are deleted with
+        // them (onDelete: Cascade in schema.prisma). This only happens if some
+        // other table still points at the user and has no such rule.
+        if (error.code === 'P2003') {
+          throw new ConflictException(
+            'This user is still referenced by other data and cannot be deleted',
+          );
+        }
+      }
+
+      throw error;
     }
-}
+  }
   async updatePassword(
 	userId: number,
 	updatePasswordDto: UpdatePasswordDto,
