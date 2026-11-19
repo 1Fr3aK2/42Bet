@@ -208,7 +208,7 @@ erDiagram
     Post ||--o{ Comment : has
     User ||--o{ Report : files
     User |o--o{ Report : resolves
-    User ||--o{ ModerationLog : records
+    User |o--o{ ModerationLog : records
     User ||--o{ Bet : places
 
     User {
@@ -269,7 +269,7 @@ erDiagram
         int targetId
         string action
         string reason
-        int moderatorId FK
+        int moderatorId FK "optional"
         datetime createdAt
     }
     Bet {
@@ -346,9 +346,8 @@ in `backend/prisma/migrations/`, applied automatically at startup.
 
 The minimum is 14 points; the 3 extra points count as bonus (at most 5). Not claimed because
 they are not complete: user interaction (needs chat and friends), standard user
-management (needs friends and online status), advanced permissions (the team
-decided not to add user deletion), languages, additional browsers, and content
-moderation AI (our moderation is rule-based, not AI).
+management (needs friends and online status), advanced permissions, languages, additional browsers,
+and content moderation AI (our moderation is rule-based, not AI).
 
 ### Why we chose each module and how it is implemented
 
@@ -409,7 +408,10 @@ moderation AI (our moderation is rule-based, not AI).
 - Moderation: reports, rule-based automatic moderation, manual review and moderation log.
 - Public admin API with API key, rate limiting and Swagger documentation; its test script.
 - Prisma schema and migrations for the forum and the roles; code reviews.
-- Challenges: <!-- TODO(Hugo) -->
+- Challenges:
+  - Integrating JWT authentication, role-based permissions and ownership checks across forum endpoints, ensuring users can only modify their own content while moderators have the necessary privileges.
+  - Implementing automatic and manual moderation while maintaining consistent content statuses, report handling and an auditable moderation history.
+  - Securing the public admin API with API key authentication, Redis-based rate limiting and Swagger documentation, while integrating it into the existing NestJS architecture.
 
 ### Rafael Matos
 
@@ -501,6 +503,15 @@ moderation AI (our moderation is rule-based, not AI).
 - **Planning**: after the first meeting, ChatGPT was used to turn the agreed idea
   into a first plan and division of work, which the team then discussed and
   adjusted.
+
+- **Hugo** used ChatGPT throughout the development of the forum,
+  moderation system and public admin API as a learning and development
+  assistant. AI was used to explore architectural decisions, understand
+  NestJS and Prisma concepts, assist with implementation and debugging,
+  review authentication and authorization mechanisms, and develop testing
+  procedures. The resulting code was reviewed, tested and studied to
+  ensure understanding of its behavior and integration with the project.
+
 - **Miguel** used Claude (Anthropic) through Claude Code to audit the project
   against the subject, to write and test the betting engine and its test
   script, to find and fix the ELK, `.env` and WAF problems, to connect the
