@@ -96,10 +96,10 @@ model ModerationLog {
   targetId    Int
   action      String
   reason      String?
-  moderatorId Int
+  moderatorId Int?
   createdAt   DateTime @default(now())
 
-  moderator   User     @relation(fields: [moderatorId], references: [id], onDelete: Cascade)
+  moderator   User?     @relation(fields: [moderatorId], references: [id], onDelete: SetNull)
 }
 
 model Bet {
