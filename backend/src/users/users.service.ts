@@ -6,6 +6,7 @@ import { Prisma, Role } from '@prisma/client';
 import { UpdateMeDto } from './update-me.dto';
 import { UpdatePasswordDto } from './update-password.dto';
 import { STARTING_BALANCE } from '../bets/bets.constants';
+import { normalizeAvatar } from './avatar.util';
 
 
 //@UseGuards(JwtAuthGuard)
@@ -30,40 +31,41 @@ export class UsersService {
   });
 }
 
-  async create(createUserDto: CreateUserDto) {
-    const hash = await bcrypt.hash(createUserDto.password, 10);
-
-	try {
-		return await this.prisma.user.create({
-		  data: {
-			...createUserDto,
-			password: hash,
-			wallet: STARTING_BALANCE, // set by the server, whatever the client sends
-		  },
-		  select: {
-			id: true,
-			username: true,
-			email: true,
-			role: true,
-			avatar: true,
-			wallet: true,
-			wins: true,
-			losses: true,
-			createdAt: true,
-			updatedAt: true,
-		  },
-		});
-	  } catch (error) {
-		if (
-		  error instanceof Prisma.PrismaClientKnownRequestError &&
-		  error.code === 'P2002'
-		) {
-		  throw new ConflictException('Username or email already exists');
-		}
   
-		throw error;
-	  }
+	async create(createUserDto: CreateUserDto) {
+		const hash = await bcrypt.hash(createUserDto.password, 10);
+		const avatar = await normalizeAvatar(createUserDto.avatar);
+		try {
+	 
+			return await this.prisma.user.create({
+				data: {
+		  			username: createUserDto.username,
+		  			email: createUserDto.email,
+					password: hash,
+					avatar,
+		  			wallet: STARTING_BALANCE,
+				},
+				select: {
+		  			id: true,
+		  			username: true,
+		  			email: true,
+		  			role: true,
+		 			avatar: true,
+		  			wallet: true,
+		  			wins: true,
+		  			losses: true,
+		  			createdAt: true,
+		  			updatedAt: true,
+				},
+			});
+		} catch (error) {
+	 		 if (error instanceof Prisma.PrismaClientKnownRequestError &&
+				error.code === 'P2002')
+				throw new ConflictException('Username or email already exists');
+	 		throw error;
 	}
+}
+  
 
   async updateRole(
     userId: number,
@@ -136,8 +138,11 @@ export class UsersService {
 	return user;
   }
 
-  async updateMe( userId: number,	updateMeDto: UpdateMeDto,) 
-  {
+  
+async updateMe(
+	userId: number,
+	updateMeDto: UpdateMeDto,
+  ) {
 	const user = await this.prisma.user.findUnique({
 	  where: {
 		id: userId,
@@ -150,6 +155,9 @@ export class UsersService {
 	  );
 	}
   
+	// Validate and normalize the avatar on the server.
+	const avatar = await normalizeAvatar(updateMeDto.avatar);
+  
 	try {
 	  return await this.prisma.user.update({
 		where: {
@@ -157,7 +165,7 @@ export class UsersService {
 		},
 		data: {
 		  username: updateMeDto.username,
-		  avatar: updateMeDto.avatar,
+		  avatar,
 		},
 		select: {
 		  id: true,
@@ -177,14 +185,13 @@ export class UsersService {
 		error instanceof Prisma.PrismaClientKnownRequestError &&
 		error.code === 'P2002'
 	  ) {
-		throw new ConflictException(
-		  'Username already exists',
-		);
+		throw new ConflictException('Username already exists');
 	  }
   
 	  throw error;
 	}
   }
+
   async deleteUser(userId: number, requesterId: number) {
     if (userId === requesterId) {
       throw new BadRequestException('You cannot delete your own account');
