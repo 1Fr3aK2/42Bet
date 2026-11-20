@@ -117,6 +117,7 @@ services:
       - "443:8443"
       - "80:8080"
     volumes:
+      - ./nginx/template/nginx.conf.template:/etc/nginx/templates/nginx.conf.template:ro
       - ./nginx/template/default.conf.template:/etc/nginx/templates/conf.d/default.conf.template
       - ./scripts/setup-certs.sh:/scripts/setup-certs.sh
       - ./nginx/certs:/etc/nginx/certs

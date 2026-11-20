@@ -1,7 +1,9 @@
 
 import { BadRequestException } from '@nestjs/common';
 import sharp from 'sharp';
+import { Logger } from '@nestjs/common';
 
+const logger = new Logger('Avatar');
 const MAX_AVATAR_BYTES = 75 * 1024;
 const MAX_AVATAR_PIXELS = 16_000_000;
 const MAX_DIMENSION = 4096;
@@ -75,6 +77,11 @@ export async function normalizeAvatar(
     if (error instanceof BadRequestException) {
       throw error;
     }
+
+    logger.error(
+      'Avatar processing failed',
+      error instanceof Error ? error.stack : String(error),
+    );
 
     throw new BadRequestException(
       'Avatar must contain a valid image',
