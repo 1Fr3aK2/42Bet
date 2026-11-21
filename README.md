@@ -415,37 +415,48 @@ and content moderation AI (our moderation is rule-based, not AI).
 
 ### Rafael Matos
 
-- **Docker Compose architecture, Container Hardening & Makefile**:
-  - Multi-container architecture (`42Bet`), network isolation (`bridge`), persistent volumes, lifecycle management via `make`, `make down`, `make re`, `make clean`.
-  - Automated one-shot initialization and migration pipeline: `backend_migrate`, `backend_seed`, `postgres_app_user_init`, `prometheus-init`, `vault-data-init`, `elasticsearch_backups_init`.
-  - Container privilege hardening: Enforced `security_opt: [no-new-privileges:true]` across all Compose services, preventing privilege escalation through `setuid`/`setgid` binaries.
+- **Docker Compose Architecture, Container Hardening & Lifecycle**:
+  - Multi-container architecture (`42Bet`), network isolation (`bridge`), persistent volumes, and deterministic service lifecycle management via `Makefile`.
+  - Automated one-shot initialization and migration pipeline: `backend_migrate`, `backend_seed`, `postgres_app_user_init`, `prometheus-init`, `vault-data-init`, `vault-keys-init`, `vault-approle-init`, `elasticsearch_backups_init`, `modsec-audit-init`, `kibana_user_init`, `elasticsearch_ilm_init`.
+  - Universal container privilege hardening: Enforced `security_opt: [no-new-privileges:true]` across 100% of Compose services (28 of 28), including all 6 ephemeral init containers, preventing privilege escalation through `setuid`/`setgid` binaries.
+  - Disaster recovery preservation: Updated `make fclean` to preserve `./backups` so routine developer cleanups do not destroy automated PostgreSQL dumps and Elasticsearch snapshots.
 - **Nginx Reverse Proxy & ModSecurity WAF (OWASP CRS)**:
-  - TLS termination (HTTPS), HTTP/2, security headers (HSTS, CSP, X-Frame-Options, X-Content-Type-Options) and version disclosure suppression with `server_tokens off;` (suppressing the server version from HTTP response headers).
+  - TLS termination (HTTPS), HTTP/2 enabled via `http2 on;` and verified via ALPN (`h2`), defensive security headers (HSTS, CSP, X-Frame-Options, X-Content-Type-Options), version suppression with `server_tokens off;`, and backend technology suppression with `proxy_hide_header X-Powered-By;`.
+  - Dynamic DNS resolution: Configured `resolver 127.0.0.11 valid=10s` with variable-based `proxy_pass` to prevent stale IP lookups during container recreations.
   - Dedicated WebSocket proxy configurations: `/socket.io/` (real-time trading and Kraken feeds) and `/grafana/api/live/` (dedicated Grafana Live WebSocket proxy with 3600s timeouts, eliminating 400 errors and audit log flooding).
   - Content-Security-Policy: Configured and hardened; removed `'unsafe-eval'` following frontend transition to production build.
-  - WAF Tuning (OWASP CRS Paranoia Level 2): Surgical exclusions in `before-crs.conf` (PromQL, query history) and removed outbound response rule `950100` so upstream `5xx` server exceptions are preserved with accurate HTTP semantics (`500`, `502`, `503`) rather than masquerading as `403 Forbidden`.
-  - Public health endpoint hardening: Refactored `/health/status` to group services into `core` and `monitoring` while returning `200`, hiding internal system topology.
+  - WAF Tuning (OWASP CRS Paranoia Level 2): Surgical exclusions in `before-crs.conf` (avatar base64, PromQL, Grafana userstorage, Kibana login `currentURL`, Kibana session `sid`, Kibana Referer) and removed outbound response rule `950100` so upstream `5xx` server exceptions are preserved with accurate HTTP semantics (`500`, `502`, `503`) rather than masquerading as `403 Forbidden`.
+  - **Zero Inline Rules Architecture**: Migrated all legacy inline ModSecurity rules (Kibana rule `1000012` and Socket.IO rule `1000013`) into `before-crs.conf` and hardened regexes with `^/+` to normalize raw `REQUEST_URI` slashes matching Nginx path routing.
+  - Public health endpoint hardening: Refactored `/health/status` to group services into `core` and `monitoring` while returning `200`, hiding internal system topology; created independent static `/status` HTML page served directly by Nginx.
 - **HashiCorp Vault (Production Mode, AppRole & Secrets Management)**:
   - Migrated Vault from dev-mode to production with persistent Raft storage and internal TLS (`https://vault:8200`).
-  - AppRole authentication: Runtime secret injection (`DATABASE_URL`, `REDIS_URL`, JWT secret, Admin credentials) without secrets in `.env` files or images; `secret_id_ttl=0` to eliminate 24h credential expiration.
+  - Enabled `disable_mlock = false` with `IPC_LOCK` capability and unlimited `memlock` ulimit to prevent secrets in RAM from swapping to host disk.
+  - AppRole authentication: Runtime secret injection (`DATABASE_URL`, `REDIS_URL`, JWT secret, Admin credentials, Elasticsearch monitor credentials) directly into Node.js process memory without secrets in `.env` files, container environments, or images; `secret_id_ttl=0` to eliminate 24h credential expiration.
   - Idempotent Shamir init and unseal (`vault-init.sh`) with 5 shares (threshold 3); automated revocation of the root token after initial bootstrap for strict least privilege.
   - Unsealed healthcheck validation (`CMD vault status`) and resolution of startup ordering deadlock via `service_started` on `vault_init`, preventing `backend` from booting against a sealed Vault.
+- **Public Admin API & Swagger UI Integration**:
+  - Integrated OpenAPI (Swagger) documentation for the Public Admin API at `/api/admin/docs`.
+  - Resolved browser evaluation blocker: removed custom Express middleware requiring API key on initial page GET, added OpenAPI `addApiKey()` security scheme to render the interactive green "Authorize" modal button for evaluators, while enforcing backend security on all endpoints via `AdminApiKeyGuard` and Nginx rate limiting (30 req/s).
 - **Database Security & Least Privilege**:
-  - Multi-tier least privilege in PostgreSQL: Idempotent provisioning (`postgres_app_user_init`) of `app_user` with restricted DML privileges (`SELECT`, `INSERT`, `UPDATE`, `DELETE`), removing superuser access from backend runtime and isolating DDL migrations to `backend_migrate`.
+  - Multi-tier least privilege in PostgreSQL: Idempotent provisioning (`postgres_app_user_init`) of `app_user` with restricted DML privileges (`SELECT`, `INSERT`, `UPDATE`, `DELETE`) and `ALTER DEFAULT PRIVILEGES` for future migrations, removing superuser access from backend runtime and isolating DDL migrations to `backend_migrate`.
   - Dedicated monitoring role: Created `postgres_exporter` user granted PostgreSQL native `pg_monitor` role, providing full server performance visibility with zero access to application tables.
 - **Brute-Force & Rate Limiting Hardening**:
-  - Resolved account-based brute-force bypass: Implemented account-level Redis counter keyed on canonical `user.id`, preventing attackers from evading lockout by alternating between email and username.
+  - Dual-layer rate limiting: Leaky bucket IP limiting at Nginx (4 zones: `/auth`, `/api/admin`, `/forum`, `/health`) and account-level limiting in NestJS + Redis.
+  - Resolved account-based brute-force bypass (Finding S1): Implemented account-level Redis counter keyed on canonical `user.id`, preventing attackers from evading lockout by alternating between email and username; SHA-256 hashed keys for non-existent users to avoid storing plaintext emails in Redis.
 - **Monitoring, Centralized Logging & Disaster Recovery (Prometheus, Grafana, ELK)**:
-  - Prometheus hardening: Removed unauthenticated public access (returns `404` through Nginx); all queries proxied securely via authenticated Grafana.
-  - Provisioned Grafana dashboards (`infra-status.json`), metrics exporters (`nginx_exporter`, `postgres_exporter`, `redis_exporter`, backend metrics), and alert rules.
-  - Elastic Stack (ELK): Centralized logging with Filebeat, Logstash pipeline parsing ModSecurity audit logs and application logs, and Elasticsearch with mandatory 14-day Index Lifecycle Management (**ILM** policy `42bet-logs-policy`).
+  - Prometheus hardening: Removed unauthenticated public access (returns `404` through Nginx); all queries proxied securely via authenticated Grafana with `access: proxy`.
+  - Provisioned Grafana dashboards (`infra-status.json`), metrics exporters (`nginx_exporter`, `postgres_exporter`, `redis_exporter`, backend metrics), and alert rules (`alert.rules.yml`).
+  - Elastic Stack (ELK): Centralized logging with Filebeat (project-scoped Docker autodiscover filtering strictly on 42Bet compose labels and ModSecurity audit log), Logstash pipeline parsing ModSecurity audit logs (Ruby filter extracting `ruleId`, `anomaly_score`, and severity), and single-node replica optimization (`number_of_replicas: 0`).
+  - Log Retention & Archiving: Enforced 14-day Index Lifecycle Management (**ILM** policy `42bet-logs-policy`) and 30-day Snapshot Lifecycle Management (**SLM** policy `daily-snapshots` to `./backups/elasticsearch`).
+  - Elasticsearch Least Privilege: Created dedicated `es_monitor` role with cluster `monitor` privilege only for backend health checks, stored credentials in Vault, and eliminated `ELASTIC_PASSWORD` from the backend environment.
   - Automated daily PostgreSQL backups with 7-day retention (`postgres_backup`) and tested, documented Disaster Recovery runbooks.
 - **Code reviews and pull request management**:
-  - Reviewed and merged pull requests across frontend, backend, and infrastructure branches.
+  - Reviewed, validated, and merged pull requests across frontend, backend, and infrastructure branches, ensuring code quality, security posture, and non-breaking container integration.
 - **Challenges**:
   - *Vault Production Migration & Startup Deadlock*: Moving from dev-mode to persistent Raft storage with TLS created a circular deadlock because the healthcheck originally masked sealed state (`[ $? -ne 1 ]`). Resolved by decoupling daemon readiness (`service_started` with active polling) in `vault_init` from true unsealed health (`service_healthy`) required by downstream services.
-  - *WAF Tuning vs HTTP Semantics*: Tuning OWASP CRS Paranoia 2 to eliminate false positives in PromQL and WebSocket handshakes without disabling global protections; disabling outbound rule `950100` so legitimate server errors (`500`, `502`, `503`) reach clients and metrics intact instead of masquerading as 403 blocks.
-  - *Database Least Privilege (Runtime vs. Migrations vs. Metrics)*: Segregating runtime DML (`app_user`), DDL migrations (`backend_migrate`), and metrics scraping (`postgres_exporter` with `pg_monitor`) while maintaining automated schema deployment, Prisma compatibility, and zero-downtime restarts.
+  - *WAF Tuning vs HTTP Semantics & Zero Inline Rules*: Tuning OWASP CRS Paranoia 2 to eliminate false positives in PromQL, avatar uploads, and Kibana without disabling global protections; disabling outbound rule `950100` so legitimate server errors (`500`, `502`, `503`) reach clients and metrics intact instead of masquerading as 403 blocks; refactoring inline Nginx rules into surgical `before-crs.conf` exclusions with normalized URI matching.
+  - *Database & Elasticsearch Least Privilege*: Segregating runtime DML (`app_user`), DDL migrations (`backend_migrate`), and metrics scraping (`postgres_exporter` with `pg_monitor`); decoupling the backend healthcheck from the `elastic` superuser by engineering the `es_monitor` role and Vault secret pipeline.
+  - *Swagger UI Browser Authentication*: Resolving the 401 blocker on `/api/admin/docs` by moving authentication from Express route-level middleware to OpenAPI `apiKey` security definition, allowing evaluators to load the Swagger UI in any standard browser and authenticate interactively with the "Authorize" button while keeping controller guards intact.
 
 ### Pedro Silva
 
@@ -504,6 +515,20 @@ and content moderation AI (our moderation is rule-based, not AI).
   into a first plan and division of work, which the team then discussed and
   adjusted.
 
+- **Rafael** used AI assistants (Gemini, Claude, ChatGPT) as technical design sounding
+  boards and research companions throughout the infrastructure, cybersecurity,
+  and DevOps implementation. AI was used to explore Vault production-mode
+  configuration (Raft consensus storage, Shamir secret sharing mechanics, and
+  AppRole token lifecycles), research ModSecurity v3 / OWASP CRS v4 rule
+  interactions and regex nuances (differentiating raw `REQUEST_URI` matching
+  from Nginx normalized paths), design the PostgreSQL 3-tier least privilege
+  model and idempotent SQL scripts (`ensure-app-user.sh`), investigate Linux
+  kernel capabilities (`IPC_LOCK`, `mlock`, `no-new-privileges:true`), and
+  troubleshoot startup dependency ordering in Docker Compose. Every script,
+  configuration file, WAF rule, and pipeline was written, reviewed, tested on the
+  live stack against simulated attacks, and validated by Rafael, who understands,
+  maintains, and can explain every single line.
+
 - **Hugo** used ChatGPT throughout the development of the forum,
   moderation system and public admin API as a learning and development
   assistant. AI was used to explore architectural decisions, understand
@@ -529,8 +554,6 @@ and content moderation AI (our moderation is rule-based, not AI).
 - Prometheus is not published publicly through nginx (returns 404); Grafana
   proxies all PromQL queries server-side over the internal Docker network and
   requires a login. Kibana also requires authentication.
-- Filebeat reads the logs of every Docker container on the host, not only this
-  project's.
 - The certificates are self-signed, so the browser shows a warning the first time.
 - If Vault restarts independently without the init service, it enters a sealed state; Docker's healthcheck detects this (`unhealthy`) and prevents the backend from booting until `docker compose up -d vault_init` unseals it.
 

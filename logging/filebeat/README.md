@@ -123,24 +123,35 @@ It contains three main parts:
 
 ## Docker logs
 
-### Autodiscover
+### Autodiscover & Project Scoping
 
-Docker container logs are collected using Filebeat's Docker autodiscover provider:
+Docker container logs are collected using Filebeat's Docker autodiscover provider, scoped strictly to containers belonging to the `42bet` project via Compose project label filtering:
 
 ```yaml
 filebeat.autodiscover:
   providers:
     - type: docker
-      hints.enabled: true
-      hints.default_config:
-        type: container
-        paths:
-          - /var/lib/docker/containers/${data.container.id}/*.log
+      labels.dedot: true
+      templates:
+        - condition:
+            or:
+              - contains:
+                  docker.container.labels.com_docker_compose_project: "42bet"
+              - contains:
+                  docker.container.labels.com_docker_compose_project: "transcendence"
+          config:
+            - type: container
+              paths:
+                - /var/lib/docker/containers/${data.docker.container.id}/*.log
 ```
 
-The `docker` provider allows Filebeat to automatically discover containers and start log inputs for them.
+The `docker` provider listens to `/var/run/docker.sock` to dynamically discover containers and start log inputs for them.
 
-The `${data.container.id}` variable is replaced with the ID of each discovered container.
+With `labels.dedot: true`, Docker container labels containing dots (such as `com.docker.compose.project`) are normalized with underscores (`docker.container.labels.com_docker_compose_project`).
+
+The condition ensures Filebeat **only** harvests logs from containers created by this Docker Compose project (`name: 42bet`, with fallback to `transcendence`). Unrelated containers running on the host machine are ignored.
+
+The `${data.docker.container.id}` variable dynamically resolves to the ID of each matched container.
 
 The resulting path points to Docker's standard JSON log files:
 
@@ -148,32 +159,7 @@ The resulting path points to Docker's standard JSON log files:
 /var/lib/docker/containers/<container-id>/*.log
 ```
 
-This means the configuration does not need to manually list every application container.
-
----
-
-## Docker hints
-
-Docker hints are enabled:
-
-```yaml
-hints.enabled: true
-```
-
-Hints allow container metadata to influence how Filebeat collects logs.
-
-A default configuration is provided:
-
-```yaml
-hints.default_config:
-  type: container
-  paths:
-    - /var/lib/docker/containers/${data.container.id}/*.log
-```
-
-This acts as the fallback configuration for containers that do not provide more specific Filebeat hints.
-
-As a result, normal Docker container logs are collected without requiring a separate input for every service.
+This means all 42Bet application containers are automatically collected without requiring a separate input for every service or capturing foreign host containers.
 
 ---
 
