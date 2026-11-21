@@ -1,11 +1,18 @@
 filebeat.autodiscover:
   providers:
     - type: docker
-      hints.enabled: true
-      hints.default_config:
-        type: container
-        paths:
-          - /var/lib/docker/containers/${data.container.id}/*.log
+      labels.dedot: true
+      templates:
+        - condition:
+            or:
+              - contains:
+                  docker.container.labels.com_docker_compose_project: "42bet"
+              - contains:
+                  docker.container.labels.com_docker_compose_project: "transcendence"
+          config:
+            - type: container
+              paths:
+                - /var/lib/docker/containers/${data.docker.container.id}/*.log
 
 filebeat.inputs:
   - type: log

@@ -1,3 +1,5 @@
+name: 42bet
+
 services:
   backend_migrate:
     container_name: backend_migrate
